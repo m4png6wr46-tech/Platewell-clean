@@ -9,7 +9,7 @@ const app = express();
 const PORT = 3001;
 
 if (!process.env.OPENAI_API_KEY) {
-  console.error("Missing OPENAI_API_KEY in your .env file");
+  console.error("Missing OPENAI_API_KEY in your environment variables");
   process.exit(1);
 }
 
@@ -74,6 +74,134 @@ const ALLOWED_DIETARY_GOALS = [
   "pescatarian",
 ];
 
+const PREP_WORDS = [
+  "diced",
+  "chopped",
+  "minced",
+  "sliced",
+  "thinly sliced",
+  "roughly chopped",
+  "finely chopped",
+  "finely diced",
+  "shredded",
+  "grated",
+  "peeled",
+  "crushed",
+  "julienned",
+  "halved",
+  "cubed",
+  "trimmed",
+  "rinsed",
+  "drained",
+  "cooked",
+  "uncooked",
+  "softened",
+  "melted",
+  "beaten",
+  "freshly chopped",
+  "freshly minced",
+  "to serve",
+  "for garnish",
+  "optional",
+  "divided",
+];
+
+const UNIT_WORDS = [
+  "cup",
+  "cups",
+  "tbsp",
+  "tablespoon",
+  "tablespoons",
+  "tsp",
+  "teaspoon",
+  "teaspoons",
+  "oz",
+  "ounce",
+  "ounces",
+  "lb",
+  "lbs",
+  "pound",
+  "pounds",
+  "g",
+  "gram",
+  "grams",
+  "kg",
+  "ml",
+  "l",
+  "liter",
+  "liters",
+  "clove",
+  "cloves",
+  "can",
+  "cans",
+  "package",
+  "packages",
+  "pack",
+  "packs",
+  "jar",
+  "jars",
+  "bunch",
+  "bunches",
+  "bag",
+  "bags",
+  "slice",
+  "slices",
+  "piece",
+  "pieces",
+  "stick",
+  "sticks",
+  "fillet",
+  "fillets",
+  "head",
+  "heads",
+  "block",
+  "blocks",
+];
+
+const COUNTABLE_ITEM_KEYWORDS = [
+  "onion",
+  "onions",
+  "red onion",
+  "yellow onion",
+  "white onion",
+  "shallot",
+  "shallots",
+  "tomato",
+  "tomatoes",
+  "potato",
+  "potatoes",
+  "sweet potato",
+  "sweet potatoes",
+  "lemon",
+  "lemons",
+  "lime",
+  "limes",
+  "avocado",
+  "avocados",
+  "cucumber",
+  "cucumbers",
+  "carrot",
+  "carrots",
+  "zucchini",
+  "zucchinis",
+  "pepper",
+  "peppers",
+  "bell pepper",
+  "bell peppers",
+  "jalapeño",
+  "jalapeños",
+  "jalapeno",
+  "jalapenos",
+  "egg",
+  "eggs",
+  "garlic clove",
+  "garlic cloves",
+  "pita",
+  "pitas",
+  "tortilla",
+  "tortillas",
+];
+
 function getMealSlots(mealsPerDay) {
   return MEAL_TYPES_BY_COUNT[mealsPerDay] || ["breakfast", "lunch", "dinner"];
 }
@@ -130,7 +258,12 @@ function normalizeVarietyLevel(level) {
 
 function titleCase(str) {
   if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  return str
+    .split(" ")
+    .map((word) =>
+      word ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : ""
+    )
+    .join(" ");
 }
 
 function validateCuisines(cuisines) {
@@ -458,24 +591,265 @@ function buildRepeatedMealsSummary(meals) {
     .map(([meal, count]) => ({ meal, timesUsed: count }));
 }
 
-function buildGroceryList(meals) {
-  const groceryItems = [];
+function parseSimpleFraction(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+
+  if (/^\d+\/\d+$/.test(trimmed)) {
+    const [top, bottom] = trimmed.split("/").map(Number);
+    if (!bottom) return null;
+    return top / bottom;
+  }
+
+  if (/^\d+\s+\d+\/\d+$/.test(trimmed)) {
+    const [whole, fraction] = trimmed.split(/\s+/);
+    const [top, bottom] = fraction.split("/").map(Number);
+    if (!bottom) return null;
+    return Number(whole) + top / bottom;
+  }
+
+  return null;
+}
+
+function cleanIngredientText(text) {
+  let value = String(text || "").toLowerCase().trim();
+
+  value = value.replace(/\([^)]*\)/g, " ");
+  value = value.replace(/,/g, " ");
+  value = value.replace(/\s+/g, " ").trim();
+
+  for (const prepWord of PREP_WORDS) {
+    const regex = new RegExp(`\\b${prepWord.replace(/ /g, "\\s+")}\\b`, "gi");
+    value = value.replace(regex, " ");
+  }
+
+  value = value.replace(/\s+/g, " ").trim();
+  return value;
+}
+
+function singularizeWord(word) {
+  const lower = String(word || "").toLowerCase();
+
+  if (lower.endsWith("ies")) return `${lower.slice(0, -3)}y`;
+  if (lower.endsWith("oes")) return lower.slice(0, -2);
+  if (lower.endsWith("ves")) return lower.slice(0, -3) + "f";
+  if (lower.endsWith("s") && !lower.endsWith("ss")) return lower.slice(0, -1);
+
+  return lower;
+}
+
+function pluralizePhrase(phrase) {
+  const words = String(phrase || "").split(" ");
+  if (words.length === 0) return phrase;
+
+  const last = words[words.length - 1].toLowerCase();
+
+  if (last.endsWith("y") && !/[aeiou]y$/.test(last)) {
+    words[words.length - 1] = `${last.slice(0, -1)}ies`;
+    return words.join(" ");
+  }
+
+  if (
+    last.endsWith("s") ||
+    last.endsWith("x") ||
+    last.endsWith("z") ||
+    last.endsWith("ch") ||
+    last.endsWith("sh")
+  ) {
+    words[words.length - 1] = `${last}es`;
+    return words.join(" ");
+  }
+
+  words[words.length - 1] = `${last}s`;
+  return words.join(" ");
+}
+
+function normalizeIngredientName(rawName) {
+  let name = cleanIngredientText(rawName);
+
+  const words = name.split(" ").filter(Boolean);
+  const filtered = [];
+  let quantityPartConsumed = false;
+
+  for (let i = 0; i < words.length; i += 1) {
+    const current = words[i];
+    const next = words[i + 1] || "";
+    const joinedTwo = `${current} ${next}`.trim();
+
+    if (!quantityPartConsumed) {
+      if (parseSimpleFraction(current) !== null) {
+        continue;
+      }
+
+      if (UNIT_WORDS.includes(current)) {
+        continue;
+      }
+
+      if (parseSimpleFraction(joinedTwo) !== null) {
+        i += 1;
+        continue;
+      }
+
+      quantityPartConsumed = true;
+    }
+
+    if (UNIT_WORDS.includes(current)) continue;
+    if (/^\d+(\.\d+)?$/.test(current)) continue;
+    if (/^\d+\/\d+$/.test(current)) continue;
+
+    filtered.push(current);
+  }
+
+  name = filtered.join(" ").trim();
+
+  name = name
+    .replace(/\bof\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!name) return "";
+
+  if (name === "red onions") return "red onion";
+  if (name === "yellow onions") return "yellow onion";
+  if (name === "white onions") return "white onion";
+  if (name === "garlic") return "garlic";
+  if (name === "eggs") return "egg";
+
+  const keywordMatch = COUNTABLE_ITEM_KEYWORDS.find((keyword) =>
+    name.includes(keyword)
+  );
+
+  if (keywordMatch) {
+    return singularizeWord(keywordMatch);
+  }
+
+  return name;
+}
+
+function extractQuantityAndName(amountText, ingredientText = "") {
+  const amount = cleanIngredientText(amountText);
+  const ingredientFallback = normalizeIngredientName(ingredientText);
+
+  if (!amount && ingredientFallback) {
+    return {
+      name: ingredientFallback,
+      quantity: 1,
+      countable: COUNTABLE_ITEM_KEYWORDS.some((keyword) =>
+        ingredientFallback.includes(singularizeWord(keyword))
+      ),
+    };
+  }
+
+  const words = amount.split(" ").filter(Boolean);
+  let quantity = null;
+  let unit = null;
+  let startIndex = 0;
+
+  if (words.length >= 2) {
+    const maybeMixed = `${words[0]} ${words[1]}`;
+    const mixedValue = parseSimpleFraction(maybeMixed);
+    if (mixedValue !== null) {
+      quantity = mixedValue;
+      startIndex = 2;
+    }
+  }
+
+  if (quantity === null && words.length >= 1) {
+    const firstValue = parseSimpleFraction(words[0]);
+    if (firstValue !== null) {
+      quantity = firstValue;
+      startIndex = 1;
+    }
+  }
+
+  if (words[startIndex] && UNIT_WORDS.includes(words[startIndex])) {
+    unit = words[startIndex];
+    startIndex += 1;
+  }
+
+  const remainingName = normalizeIngredientName(words.slice(startIndex).join(" "));
+  const finalName = remainingName || ingredientFallback;
+
+  const countable =
+    COUNTABLE_ITEM_KEYWORDS.some((keyword) =>
+      finalName.includes(singularizeWord(keyword))
+    ) ||
+    ["egg", "garlic clove", "pita", "tortilla"].some((item) =>
+      finalName.includes(item)
+    );
+
+  if (countable && quantity === null) quantity = 1;
+
+  if (countable && unit && ["cup", "cups", "tbsp", "tablespoon", "tablespoons", "tsp", "teaspoon", "teaspoons", "g", "gram", "grams", "kg", "oz", "ounce", "ounces", "lb", "lbs", "pound", "pounds", "ml", "l", "liter", "liters"].includes(unit)) {
+    return {
+      name: finalName,
+      quantity: null,
+      countable: false,
+    };
+  }
+
+  return {
+    name: finalName,
+    quantity,
+    countable,
+  };
+}
+
+function formatCountableGroceryLine(name, quantity) {
+  const rounded = Math.max(1, Math.ceil(quantity || 1));
+  const displayName = rounded === 1 ? name : pluralizePhrase(name);
+  return `${rounded} ${displayName}`;
+}
+
+function formatGenericGroceryName(name) {
+  return titleCase(name);
+}
+
+function buildSimplifiedGroceryList(meals) {
+  const aggregatedCountable = new Map();
+  const genericItems = new Set();
 
   for (const meal of meals) {
     const ingredientAmounts = Array.isArray(meal.ingredientAmounts)
       ? meal.ingredientAmounts
       : [];
-
     const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
 
-    const source = ingredientAmounts.length > 0 ? ingredientAmounts : ingredients;
+    const maxLength = Math.max(ingredientAmounts.length, ingredients.length);
 
-    for (const item of source) {
-      groceryItems.push(String(item).trim());
+    for (let i = 0; i < maxLength; i += 1) {
+      const amountText = ingredientAmounts[i] || "";
+      const ingredientText = ingredients[i] || "";
+
+      const { name, quantity, countable } = extractQuantityAndName(
+        amountText,
+        ingredientText
+      );
+
+      if (!name) continue;
+
+      if (countable && quantity !== null) {
+        aggregatedCountable.set(
+          name,
+          (aggregatedCountable.get(name) || 0) + quantity
+        );
+      } else {
+        genericItems.add(formatGenericGroceryName(name));
+      }
     }
   }
 
-  return dedupeStrings(groceryItems).sort((a, b) => a.localeCompare(b));
+  const countableLines = Array.from(aggregatedCountable.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, quantity]) => formatCountableGroceryLine(name, quantity));
+
+  const genericLines = Array.from(genericItems).sort((a, b) => a.localeCompare(b));
+
+  return [...countableLines, ...genericLines];
 }
 
 async function generateMealPlanWithAI({
@@ -1115,7 +1489,7 @@ app.post("/generate", async (req, res) => {
       )
     );
 
-    const groceryList = buildGroceryList(meals);
+    const groceryList = buildSimplifiedGroceryList(meals);
 
     const estimatedTotalCost = clientMeals.reduce((sum, meal) => {
       return sum + Number(meal.totalMealCost || 0);
