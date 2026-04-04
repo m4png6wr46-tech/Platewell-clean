@@ -1533,7 +1533,7 @@ export default function PlatewellApp() {
                     type="text"
                     value={profile.name}
                     onChange={(e) => updateProfile({ name: e.target.value })}
-                    placeholder="e.g. Fadi"
+                    placeholder="e.g. Alex"
                     autoFocus
                   />
                 </label>
