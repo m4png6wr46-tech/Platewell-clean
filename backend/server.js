@@ -551,7 +551,7 @@ async function buildAIGroceryList(meals, people) {
     system: "You are a grocery list assistant. Return only valid JSON with no extra text, no markdown, and no code fences.",
     messages: [{
       role: "user",
-      content: `You are building a grocery list for ${people} people based on these meals for the week:\n\n${mealSummary}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else:\n- Items sold by count (onions, lemons, eggs, cans, etc): whole numbers e.g. "4 Onions", "2 cans Coconut Milk"\n- Items sold by weight (meat, fish, hard cheese): lbs e.g. "2 lbs Chicken Thighs"\n- Fresh herbs in small amounts: bunches e.g. "1 bunch Basil"\n- Liquids in cartons: "1 carton Chicken Broth"\n- NEVER use tbsp, tsp, cups, ml, fl oz, or grams as displayAmount — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
+      content: `You are building a grocery list for ${people} people based on these meals for the week:\n\n${mealSummary}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs like "0.5 lbs" or "1.5 lbs" — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy blocks/logs: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- If no meaningful quantity applies, just list the item name with no quantity\n- NEVER use decimal numbers anywhere (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
     }],
   });
 
@@ -890,6 +890,7 @@ async function generateMealPlanWithAI({
   fridgeModeType,
   ratings,
   cookTime,
+  avoidFoods = "",
 }) {
   const expectedMealCount = activeCookDays * slots.length;
 
@@ -897,6 +898,10 @@ async function generateMealPlanWithAI({
     restrictions.length > 0
       ? `Dietary restrictions: ${restrictions.join(", ")}.`
       : "No specific dietary restrictions.";
+
+  const avoidFoodsText = avoidFoods.trim()
+    ? `The user dislikes or cannot eat the following — never include these in any meal: ${avoidFoods.trim()}.`
+    : "";
 
   const fridgeText =
     fridgeIngredients.length > 0
@@ -932,7 +937,7 @@ Requirements:
 - Cuisines: ${cuisines.join(", ")}
 - Meal slots per day: ${slots.join(", ")}
 - Dietary goal: ${dietaryGoal || "balanced"}
-- ${restrictionText}
+- ${restrictionText}${avoidFoodsText ? `\n- ${avoidFoodsText}` : ""}
 - Cooking skill: ${cookingStyleDesc}
 - Variety: ${varietyDesc}
 - Budget: $${budgetTargetPerMeal.toFixed(2)} per meal per person
@@ -1262,6 +1267,7 @@ app.post("/generate", async (req, res) => {
       ratings,
       zipCode,
       cookTime,
+      avoidFoods,
     } = req.body;
 
     if (
@@ -1351,6 +1357,7 @@ app.post("/generate", async (req, res) => {
         fridgeModeType: normalizedFridgeModeType,
         ratings,
         cookTime,
+        avoidFoods: avoidFoods || "",
       });
     } catch (aiError) {
       console.error("AI generation error:", aiError);

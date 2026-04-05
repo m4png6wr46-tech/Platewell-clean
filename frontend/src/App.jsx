@@ -24,6 +24,7 @@ export default function PlatewellApp() {
           fridgeMode: false,
           fridgeIngredients: "",
           fridgeModeType: "supplement",
+          avoidFoods: "",
         };
       }
     } catch {}
@@ -41,6 +42,7 @@ export default function PlatewellApp() {
       fridgeMode: false,
       fridgeIngredients: "",
       fridgeModeType: "supplement",
+      avoidFoods: "",
     };
   });
 
@@ -102,57 +104,56 @@ export default function PlatewellApp() {
   const [checkedItems, setCheckedItems] = useState({});
   const [activeGroceryItem, setActiveGroceryItem] = useState(null);
 
+  const [showMrMunch, setShowMrMunch] = useState(
+    () => !localStorage.getItem("platewell_mrmunch_done")
+  );
+  const [munchStep, setMunchStep] = useState(0);
+  const [munchVisible, setMunchVisible] = useState(true);
+  const [munchFoodAnswer, setMunchFoodAnswer] = useState("");
+  const [munchBudgetAnswer, setMunchBudgetAnswer] = useState("");
+
+  function advanceMunch(nextStep) {
+    setMunchVisible(false);
+    setTimeout(() => { setMunchStep(nextStep); setMunchVisible(true); }, 240);
+  }
+
+  function completeMunch() {
+    const updates = {};
+    if (munchBudgetAnswer.trim()) {
+      const cleaned = munchBudgetAnswer.replace(/[^0-9.]/g, "");
+      if (cleaned) updates.budget = cleaned;
+    }
+    if (munchFoodAnswer.trim() && munchFoodAnswer.trim().toLowerCase() !== "none") {
+      updates.avoidFoods = munchFoodAnswer.trim();
+    }
+    if (Object.keys(updates).length) setForm((f) => ({ ...f, ...updates }));
+    localStorage.setItem("platewell_mrmunch_done", "true");
+    setMunchVisible(false);
+    setTimeout(() => setShowMrMunch(false), 240);
+  }
+
+  const loadingMessages = [
+    "Picking your cuisines...",
+    "Planning your meals...",
+    "Calculating your budget...",
+    "Building your grocery list...",
+    "Checking nutritional balance...",
+    "Organizing your week...",
+    "Almost ready...",
+  ];
+  const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
+  useEffect(() => {
+    if (!loading) { setLoadingMsgIndex(0); return; }
+    const interval = setInterval(() => {
+      setLoadingMsgIndex((i) => (i + 1) % loadingMessages.length);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, [loading]);
+
   function toggleCheckedItem(item) {
     setCheckedItems((prev) => ({ ...prev, [item]: !prev[item] }));
   }
 
-  const [planUsedThisWeek, setPlanUsedThisWeek] = useState(() => {
-    try {
-      const saved = localStorage.getItem("platewell_usage");
-      if (!saved) return false;
-      const { weekStart } = JSON.parse(saved);
-      const now = new Date();
-      const start = new Date(weekStart);
-      const diffDays = (now - start) / (1000 * 60 * 60 * 24);
-      return diffDays < 7;
-    } catch { return false; }
-  });
-
-  const [swapsUsed, setSwapsUsed] = useState(() => {
-    try {
-      const saved = localStorage.getItem("platewell_usage");
-      if (!saved) return 0;
-      const { weekStart, swapsUsed } = JSON.parse(saved);
-      const now = new Date();
-      const start = new Date(weekStart);
-      const diffDays = (now - start) / (1000 * 60 * 60 * 24);
-      return diffDays < 7 ? (swapsUsed || 0) : 0;
-    } catch { return 0; }
-  });
-
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [upgradeReason, setUpgradeReason] = useState("");
-
-  const FREE_LIMITS = {
-    maxDays: 3,
-    maxMealsPerDay: 3,
-    maxSwaps: 2,
-    fridgeMode: false,
-    groceryExport: false,
-  };
-
-  function saveUsage(swaps) {
-    try {
-      const saved = localStorage.getItem("platewell_usage");
-      const existing = saved ? JSON.parse(saved) : {};
-      const weekStart = existing.weekStart && (new Date() - new Date(existing.weekStart)) / (1000 * 60 * 60 * 24) < 7
-        ? existing.weekStart
-        : new Date().toISOString();
-      localStorage.setItem("platewell_usage", JSON.stringify({ weekStart, swapsUsed: swaps }));
-    } catch {}
-  }
-
-  const isDevMode = new URLSearchParams(window.location.search).get("dev") === "true";
 
   const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
@@ -396,7 +397,7 @@ export default function PlatewellApp() {
     setTimeout(() => {
       setOnboardingStep(next);
       setStepVisible(true);
-    }, 180);
+    }, 200);
   }
 
   function applyProfileToForm(p) {
@@ -482,6 +483,7 @@ export default function PlatewellApp() {
       daysPerWeek: Number(form.daysPerWeek || 0),
       mealsPerDay: Number(form.mealsPerDay || 0),
       fridgeIngredients: form.fridgeMode ? form.fridgeIngredients : "",
+      avoidFoods: form.avoidFoods || "",
       ratings,
       zipCode,
     };
@@ -495,24 +497,6 @@ export default function PlatewellApp() {
     if (validationError) {
       setError(validationError);
       return;
-    }
-
-    if (!isDevMode) {
-      if (planUsedThisWeek) {
-        setUpgradeReason("plan");
-        setShowUpgradeModal(true);
-        return;
-      }
-      if (Number(form.daysPerWeek) > FREE_LIMITS.maxDays) {
-        setUpgradeReason("days");
-        setShowUpgradeModal(true);
-        return;
-      }
-      if (Number(form.mealsPerDay) > FREE_LIMITS.maxMealsPerDay) {
-        setUpgradeReason("meals");
-        setShowUpgradeModal(true);
-        return;
-      }
     }
 
     setLoading(true);
@@ -537,8 +521,6 @@ export default function PlatewellApp() {
 
       setResult(data);
       setCheckedItems({});
-      setPlanUsedThisWeek(true);
-      saveUsage(swapsUsed);
     } catch (err) {
       setError(err.message || "Something went wrong.");
     } finally {
@@ -548,12 +530,6 @@ export default function PlatewellApp() {
 
   async function swapMeal(mealToSwap) {
     if (!result) return;
-
-    if (!isDevMode && swapsUsed >= FREE_LIMITS.maxSwaps) {
-      setUpgradeReason("swaps");
-      setShowUpgradeModal(true);
-      return;
-    }
 
     const swapKey = `${mealToSwap.day}-${mealToSwap.mealType}`;
     setSwapLoadingKey(swapKey);
@@ -599,9 +575,6 @@ export default function PlatewellApp() {
           meals: updatedMeals,
         };
       });
-      const newSwaps = swapsUsed + 1;
-      setSwapsUsed(newSwaps);
-      saveUsage(newSwaps);
     } catch (err) {
       setError(err.message || "Failed to swap meal.");
     } finally {
@@ -1396,22 +1369,22 @@ export default function PlatewellApp() {
 
           <div style={{
             opacity: stepVisible ? 1 : 0,
-            transform: stepVisible ? "translateY(0)" : "translateY(8px)",
-            transition: "opacity 0.18s ease, transform 0.18s ease",
+            transform: stepVisible ? "translateY(0)" : "translateY(10px)",
+            transition: "opacity 0.26s ease, transform 0.26s ease",
           }}>
 
             {/* Step 0: Welcome */}
             {onboardingStep === 0 && (
               <>
                 <h1 style={{ ...ob.heading, fontSize: isMobile ? "1.8rem" : "2.4rem" }}>
-                  Hey there, welcome to Platewell 🌿
+                  Stop guessing what's for dinner. 🌿
                 </h1>
-                <p style={ob.subheading}>Real food. Real budget. Real life.</p>
+                <p style={ob.subheading}>Your whole week of meals, planned in 60 seconds.</p>
                 <p style={ob.body}>
-                  We'll help you plan a full week of meals that actually fit your life — in under 60 seconds.
+                  Tell us a little about yourself and we'll build a full week of real meals — with a grocery list and budget breakdown — tailored exactly to you.
                 </p>
                 <button style={ob.primaryBtn} type="button" onClick={() => goToStep(1)}>
-                  Let's go →
+                  Build my plan →
                 </button>
               </>
             )}
@@ -1420,9 +1393,9 @@ export default function PlatewellApp() {
             {onboardingStep === 1 && (
               <>
                 <button style={ob.backBtn} type="button" onClick={() => goToStep(0)}>← Back</button>
-                <h2 style={ob.heading}>What do you love to eat?</h2>
+                <h2 style={ob.heading}>What makes your mouth water?</h2>
                 <p style={{ ...ob.body, marginBottom: "14px" }}>
-                  Pick your favorite cuisines — we'll rotate through them all week.
+                  Pick your favorite cuisines — we'll mix them up so every night feels different.
                 </p>
                 <span style={ob.sectionLabel}>Cuisine preferences</span>
                 {loadingCuisines ? (
@@ -1473,10 +1446,10 @@ export default function PlatewellApp() {
                   })}
                 </div>
                 <button style={ob.primaryBtn} type="button" onClick={() => goToStep(2)}>
-                  Continue →
+                  Looks good →
                 </button>
                 <button style={ob.skipLink} type="button" onClick={skipOnboarding}>
-                  I'll set this up later
+                  Skip for now
                 </button>
               </>
             )}
@@ -1485,7 +1458,7 @@ export default function PlatewellApp() {
             {onboardingStep === 2 && (
               <>
                 <button style={ob.backBtn} type="button" onClick={() => goToStep(1)}>← Back</button>
-                <h2 style={ob.heading}>How do you like to eat and cook?</h2>
+                <h2 style={ob.heading}>How do you cook on a weeknight?</h2>
                 <label style={ob.label}>
                   What's your eating goal?
                   <select style={ob.select} value={profile.dietaryGoal} onChange={(e) => updateProfile({ dietaryGoal: e.target.value })}>
@@ -1513,10 +1486,10 @@ export default function PlatewellApp() {
                   </select>
                 </label>
                 <button style={ob.primaryBtn} type="button" onClick={() => goToStep(3)}>
-                  Continue →
+                  That's me →
                 </button>
                 <button style={ob.skipLink} type="button" onClick={skipOnboarding}>
-                  I'll set this up later
+                  Skip for now
                 </button>
               </>
             )}
@@ -1525,7 +1498,7 @@ export default function PlatewellApp() {
             {onboardingStep === 3 && (
               <>
                 <button style={ob.backBtn} type="button" onClick={() => goToStep(2)}>← Back</button>
-                <h2 style={ob.heading}>Nice to meet you — what should we call you?</h2>
+                <h2 style={ob.heading}>Almost there — who are we cooking for?</h2>
                 <label style={ob.label}>
                   Your name
                   <input
@@ -1549,10 +1522,10 @@ export default function PlatewellApp() {
                   />
                 </label>
                 <button style={ob.primaryBtn} type="button" onClick={() => goToStep(4)}>
-                  Continue →
+                  Nice to meet you →
                 </button>
                 <button style={ob.skipLink} type="button" onClick={skipOnboarding}>
-                  I'll set this up later
+                  Skip for now
                 </button>
               </>
             )}
@@ -1561,9 +1534,9 @@ export default function PlatewellApp() {
             {onboardingStep === 4 && (
               <>
                 <button style={ob.backBtn} type="button" onClick={() => goToStep(3)}>← Back</button>
-                <h2 style={ob.heading}>Last thing — what's your weekly food budget?</h2>
+                <h2 style={ob.heading}>Last one — what's your weekly food budget?</h2>
                 <p style={{ ...ob.body, marginBottom: "18px" }}>
-                  No judgment here. Every budget builds a great plan.
+                  We'll make every dollar count. No judgment, no fluff.
                 </p>
                 <label style={ob.label}>
                   Weekly food budget
@@ -1602,10 +1575,10 @@ export default function PlatewellApp() {
                   />
                 </label>
                 <button style={ob.primaryBtn} type="button" onClick={() => goToStep(5)}>
-                  Build my plan →
+                  I'm ready →
                 </button>
                 <button style={ob.skipLink} type="button" onClick={skipOnboarding}>
-                  I'll set this up later
+                  Skip for now
                 </button>
               </>
             )}
@@ -1613,14 +1586,15 @@ export default function PlatewellApp() {
             {/* Step 5: Done */}
             {onboardingStep === 5 && (
               <>
-                <h2 style={ob.heading}>
-                  You're all set{profile.name ? `, ${profile.name.charAt(0).toUpperCase() + profile.name.slice(1)}` : ""}! 🎉
+                <h2 style={{ ...ob.heading, fontSize: isMobile ? "1.8rem" : "2.2rem" }}>
+                  {profile.name ? `You're all set, ${profile.name.charAt(0).toUpperCase() + profile.name.slice(1)}! 🎉` : "You're all set! 🎉"}
                 </h2>
+                <p style={{ ...ob.subheading, marginBottom: "10px" }}>Your personalized meal plan is ready to build.</p>
                 <p style={ob.body}>
-                  Your preferences are saved. Every plan we build will feel made for you. Let's make your first one.
+                  We've got your tastes, your schedule, and your budget. Time to see what's cooking.
                 </p>
-                <button style={ob.primaryBtn} type="button" onClick={completeOnboarding}>
-                  Build my first plan →
+                <button style={{ ...ob.primaryBtn, fontSize: "1rem", padding: "17px 16px" }} type="button" onClick={completeOnboarding}>
+                  Show me my plan →
                 </button>
               </>
             )}
@@ -1637,8 +1611,8 @@ export default function PlatewellApp() {
 
           {onboardingStep === 0 && (
             <>
-              <p style={ob.rightHeading}>Your week, planned for you</p>
-              <p style={ob.rightBody}>Meals, grocery list, and budget — all in one place.</p>
+              <p style={ob.rightHeading}>Here's what you'll get</p>
+              <p style={ob.rightBody}>A full week of meals, a ready-to-shop grocery list, and a budget breakdown — all in one go.</p>
               <div style={ob.previewCard}>
                 <p style={ob.previewCardTitle}>Mediterranean Chicken Bowl</p>
                 <p style={ob.previewCardSub}>Day 1 · Lunch · 25 min</p>
@@ -1656,8 +1630,8 @@ export default function PlatewellApp() {
 
           {onboardingStep === 1 && (
             <>
-              <p style={ob.rightHeading}>Mix it up all week</p>
-              <p style={ob.rightBody}>We rotate your favorites so every meal feels different.</p>
+              <p style={ob.rightHeading}>No boring meals, ever</p>
+              <p style={ob.rightBody}>We mix your favorites so Monday's dinner feels nothing like Friday's.</p>
               <div style={ob.previewCard}>
                 <p style={ob.previewCardTitle}>Mediterranean + Italian</p>
                 <p style={ob.previewCardSub}>Your selected cuisines</p>
@@ -1673,8 +1647,8 @@ export default function PlatewellApp() {
 
           {onboardingStep === 2 && (
             <>
-              <p style={ob.rightHeading}>Meals that fit your life</p>
-              <p style={ob.rightBody}>Quick weeknights or weekend cooking — your call.</p>
+              <p style={ob.rightHeading}>Meals that fit your actual life</p>
+              <p style={ob.rightBody}>Whether you've got 15 minutes or a free Sunday afternoon, we'll match the plan to you.</p>
               <div style={ob.previewCard}>
                 <p style={ob.previewCardTitle}>Quick & easy</p>
                 <p style={ob.previewCardSub}>Under 20 min · Balanced</p>
@@ -1686,8 +1660,8 @@ export default function PlatewellApp() {
 
           {onboardingStep === 3 && (
             <>
-              <p style={ob.rightHeading}>Personalized for you</p>
-              <p style={ob.rightBody}>Every plan we build will feel made for your household.</p>
+              <p style={ob.rightHeading}>Made for your household</p>
+              <p style={ob.rightBody}>Every plan is sized and shaped around the people you're feeding — no one-size-fits-all.</p>
               <div style={ob.previewCard}>
                 <p style={ob.previewCardTitle}>
                   {profile.name ? `Hey, ${profile.name.charAt(0).toUpperCase() + profile.name.slice(1)}!` : "Hey there!"}
@@ -1702,8 +1676,8 @@ export default function PlatewellApp() {
 
           {onboardingStep === 4 && (
             <>
-              <p style={ob.rightHeading}>Your budget goes further</p>
-              <p style={ob.rightBody}>We stretch every dollar without sacrificing taste.</p>
+              <p style={ob.rightHeading}>Good food doesn't have to cost a lot</p>
+              <p style={ob.rightBody}>We plan around your budget so you're never overspending at checkout.</p>
               <div style={ob.previewCard}>
                 <p style={ob.previewCardTitle}>{profile.budget ? `$${profile.budget} / week` : "Your budget"}</p>
                 <p style={ob.previewCardSub}>
@@ -1722,8 +1696,8 @@ export default function PlatewellApp() {
 
           {onboardingStep === 5 && (
             <>
-              <p style={ob.rightHeading}>Ready to go</p>
-              <p style={ob.rightBody}>Your personalized meal engine is warmed up and ready.</p>
+              <p style={ob.rightHeading}>Your plan is waiting</p>
+              <p style={ob.rightBody}>Every detail you gave us goes into building something actually worth eating this week.</p>
               <div style={ob.previewCard}>
                 <p style={ob.previewCardTitle}>Week 1 ready</p>
                 <p style={ob.previewCardSub}>
@@ -1737,6 +1711,229 @@ export default function PlatewellApp() {
               </div>
             </>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (showMrMunch) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f4fbf6",
+        fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        padding: "24px",
+        boxSizing: "border-box",
+      }}>
+        <div style={{
+          width: "100%",
+          maxWidth: "480px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0",
+        }}>
+          <p style={{ margin: "0 0 28px", color: "#1f8a5b", letterSpacing: "0.14em", fontSize: "12px", fontWeight: 800, textTransform: "uppercase" }}>PLATEWELL</p>
+
+          <div style={{
+            opacity: munchVisible ? 1 : 0,
+            transform: munchVisible ? "translateY(0)" : "translateY(10px)",
+            transition: "opacity 0.24s ease, transform 0.24s ease",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+          }}>
+
+            {/* Mr. Munch avatar + greeting — always visible */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div style={{
+                width: "44px", height: "44px", borderRadius: "50%",
+                background: "#1f8a5b", display: "flex", alignItems: "center",
+                justifyContent: "center", fontSize: "1.4rem", flexShrink: 0,
+              }}>🍽️</div>
+              <div style={{
+                background: "#ffffff", border: "1px solid #dceee3",
+                borderRadius: "0 18px 18px 18px", padding: "14px 16px",
+                color: "#234536", fontSize: "0.97rem", lineHeight: 1.6,
+                boxShadow: "0 4px 16px rgba(23,64,45,0.07)",
+                maxWidth: "340px",
+              }}>
+                Hey! I'm <strong>Mr. Munch</strong>, your personal meal planning assistant. I'm going to help you plan a week of meals you'll actually want to eat. 🍽️
+              </div>
+            </div>
+
+            {/* Step 0: food aversions */}
+            {munchStep === 0 && (
+              <>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                  <div style={{
+                    width: "44px", height: "44px", borderRadius: "50%",
+                    background: "#1f8a5b", display: "flex", alignItems: "center",
+                    justifyContent: "center", fontSize: "1.4rem", flexShrink: 0,
+                  }}>🍽️</div>
+                  <div style={{
+                    background: "#ffffff", border: "1px solid #dceee3",
+                    borderRadius: "0 18px 18px 18px", padding: "14px 16px",
+                    color: "#234536", fontSize: "0.97rem", lineHeight: 1.6,
+                    boxShadow: "0 4px 16px rgba(23,64,45,0.07)",
+                    maxWidth: "340px",
+                  }}>
+                    Any foods you absolutely can't stand or can't eat?
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingLeft: "56px" }}>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={munchFoodAnswer}
+                    onChange={(e) => setMunchFoodAnswer(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); advanceMunch(1); } }}
+                    placeholder="e.g. shellfish, mushrooms, cilantro… or just say 'none'"
+                    style={{
+                      padding: "13px 14px", borderRadius: "14px",
+                      border: "1px solid #cfe5d7", background: "#ffffff",
+                      color: "#17362a", fontSize: "0.95rem",
+                      outline: "none", boxSizing: "border-box",
+                      fontFamily: "inherit",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => advanceMunch(1)}
+                    style={{
+                      padding: "13px 16px", border: "none", borderRadius: "14px",
+                      background: "#1f8a5b", color: "white", fontWeight: 700,
+                      fontSize: "0.95rem", cursor: "pointer",
+                      boxShadow: "0 8px 20px rgba(31,138,91,0.18)",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Got it →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 1: budget */}
+            {munchStep === 1 && (
+              <>
+                {/* User reply bubble */}
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div style={{
+                    background: "#1f8a5b", color: "#ffffff",
+                    borderRadius: "18px 0 18px 18px", padding: "12px 16px",
+                    fontSize: "0.95rem", maxWidth: "300px",
+                    lineHeight: 1.5,
+                  }}>
+                    {munchFoodAnswer.trim() || "None"}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                  <div style={{
+                    width: "44px", height: "44px", borderRadius: "50%",
+                    background: "#1f8a5b", display: "flex", alignItems: "center",
+                    justifyContent: "center", fontSize: "1.4rem", flexShrink: 0,
+                  }}>🍽️</div>
+                  <div style={{
+                    background: "#ffffff", border: "1px solid #dceee3",
+                    borderRadius: "0 18px 18px 18px", padding: "14px 16px",
+                    color: "#234536", fontSize: "0.97rem", lineHeight: 1.6,
+                    boxShadow: "0 4px 16px rgba(23,64,45,0.07)",
+                    maxWidth: "340px",
+                  }}>
+                    And what's your weekly grocery budget?
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingLeft: "56px" }}>
+                  <div style={{ position: "relative" }}>
+                    <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#587166", fontSize: "0.95rem", pointerEvents: "none" }}>$</span>
+                    <input
+                      autoFocus
+                      type="text"
+                      inputMode="decimal"
+                      value={munchBudgetAnswer}
+                      onChange={(e) => setMunchBudgetAnswer(e.target.value.replace(/[^0-9.]/g, ""))}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); advanceMunch(2); } }}
+                      placeholder="75"
+                      style={{
+                        width: "100%", padding: "13px 14px 13px 26px",
+                        borderRadius: "14px", border: "1px solid #cfe5d7",
+                        background: "#ffffff", color: "#17362a",
+                        fontSize: "0.95rem", outline: "none",
+                        boxSizing: "border-box", fontFamily: "inherit",
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => advanceMunch(2)}
+                    style={{
+                      padding: "13px 16px", border: "none", borderRadius: "14px",
+                      background: "#1f8a5b", color: "white", fontWeight: 700,
+                      fontSize: "0.95rem", cursor: "pointer",
+                      boxShadow: "0 8px 20px rgba(31,138,91,0.18)",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    That's my budget →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2: done */}
+            {munchStep === 2 && (
+              <>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <div style={{
+                    background: "#1f8a5b", color: "#ffffff",
+                    borderRadius: "18px 0 18px 18px", padding: "12px 16px",
+                    fontSize: "0.95rem", maxWidth: "300px", lineHeight: 1.5,
+                  }}>
+                    ${munchBudgetAnswer || "75"} / week
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                  <div style={{
+                    width: "44px", height: "44px", borderRadius: "50%",
+                    background: "#1f8a5b", display: "flex", alignItems: "center",
+                    justifyContent: "center", fontSize: "1.4rem", flexShrink: 0,
+                  }}>🍽️</div>
+                  <div style={{
+                    background: "#ffffff", border: "1px solid #dceee3",
+                    borderRadius: "0 18px 18px 18px", padding: "14px 16px",
+                    color: "#234536", fontSize: "0.97rem", lineHeight: 1.6,
+                    boxShadow: "0 4px 16px rgba(23,64,45,0.07)",
+                    maxWidth: "340px",
+                  }}>
+                    Perfect — I've got everything I need. Let's build your plan! 🥦
+                  </div>
+                </div>
+
+                <div style={{ paddingLeft: "56px" }}>
+                  <button
+                    type="button"
+                    onClick={completeMunch}
+                    style={{
+                      width: "100%", padding: "15px 16px", border: "none",
+                      borderRadius: "16px", background: "#1f8a5b", color: "white",
+                      fontWeight: 700, fontSize: "1rem", cursor: "pointer",
+                      boxShadow: "0 10px 24px rgba(31,138,91,0.22)",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Let's go →
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1850,96 +2047,68 @@ export default function PlatewellApp() {
                   />
                 </label>
 
-                <label style={styles.label}>
-                  How many people are you feeding?
-                  <input
-                    style={styles.input}
-                    type="text"
-                    inputMode="numeric"
-                    value={form.people}
-                    onChange={(e) => setWholeNumberField("people", e.target.value)}
-                  />
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How many people are you feeding?</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0", marginTop: "8px" }}>
+                    <button type="button" onClick={() => setWholeNumberField("people", String(Math.max(1, Number(form.people) - 1)))} style={{ width: "40px", height: "40px", borderRadius: "12px 0 0 12px", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                    <div style={{ flex: 1, height: "40px", border: "1px solid #cfe5d7", borderLeft: "none", borderRight: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", fontWeight: 700, color: "#124734", background: "#fff" }}>{form.people || "1"}</div>
+                    <button type="button" onClick={() => setWholeNumberField("people", String(Number(form.people) + 1))} style={{ width: "40px", height: "40px", borderRadius: "0 12px 12px 0", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                  </div>
+                </div>
 
-                <label style={styles.label}>
-                  How many days will you cook at home?
-                  <input
-                    style={styles.input}
-                    type="text"
-                    inputMode="numeric"
-                    value={form.daysPerWeek}
-                    onChange={(e) =>
-                      setWholeNumberField("daysPerWeek", e.target.value)
-                    }
-                  />
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How many days will you cook at home?</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0", marginTop: "8px" }}>
+                    <button type="button" onClick={() => setWholeNumberField("daysPerWeek", String(Math.max(1, Number(form.daysPerWeek) - 1)))} style={{ width: "40px", height: "40px", borderRadius: "12px 0 0 12px", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                    <div style={{ flex: 1, height: "40px", border: "1px solid #cfe5d7", borderLeft: "none", borderRight: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", fontWeight: 700, color: "#124734", background: "#fff" }}>{form.daysPerWeek || "5"}</div>
+                    <button type="button" onClick={() => setWholeNumberField("daysPerWeek", String(Math.min(7, Number(form.daysPerWeek) + 1)))} style={{ width: "40px", height: "40px", borderRadius: "0 12px 12px 0", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                  </div>
+                </div>
 
-                <label style={styles.label}>
-                  How many meals per day?
-                  <input
-                    style={styles.input}
-                    type="text"
-                    inputMode="numeric"
-                    value={form.mealsPerDay}
-                    onChange={(e) =>
-                      setWholeNumberField("mealsPerDay", e.target.value)
-                    }
-                  />
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How many meals per day?</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0", marginTop: "8px" }}>
+                    <button type="button" onClick={() => setWholeNumberField("mealsPerDay", String(Math.max(1, Number(form.mealsPerDay) - 1)))} style={{ width: "40px", height: "40px", borderRadius: "12px 0 0 12px", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                    <div style={{ flex: 1, height: "40px", border: "1px solid #cfe5d7", borderLeft: "none", borderRight: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", fontWeight: 700, color: "#124734", background: "#fff" }}>{form.mealsPerDay || "3"}</div>
+                    <button type="button" onClick={() => setWholeNumberField("mealsPerDay", String(Math.min(5, Number(form.mealsPerDay) + 1)))} style={{ width: "40px", height: "40px", borderRadius: "0 12px 12px 0", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                  </div>
+                </div>
 
-                <label style={styles.label}>
-                  What's your eating goal?
-                  <select
-                    style={styles.select}
-                    value={form.dietaryGoal}
-                    onChange={(e) => setTextField("dietaryGoal", e.target.value)}
-                  >
-                    <option value="balanced">Balanced</option>
-                    <option value="high protein">High Protein</option>
-                    <option value="vegetarian">Vegetarian</option>
-                    <option value="vegan">Vegan</option>
-                    <option value="pescatarian">Pescatarian</option>
-                  </select>
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>What's your eating goal?</span>
+                  <div style={{ ...styles.chipGrid, marginTop: "8px" }}>
+                    {[["balanced", "Balanced"], ["high protein", "High Protein"], ["vegetarian", "Vegetarian"], ["vegan", "Vegan"], ["pescatarian", "Pescatarian"]].map(([val, label]) => (
+                      <button key={val} type="button" style={{ ...styles.chip, ...(form.dietaryGoal === val ? styles.chipActive : {}) }} onClick={() => setTextField("dietaryGoal", val)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
 
-                <label style={styles.label}>
-                  How confident are you in the kitchen?
-                  <select
-                    style={styles.select}
-                    value={form.cookingStyle}
-                    onChange={(e) => setTextField("cookingStyle", e.target.value)}
-                  >
-                    <option value="quick & easy">Quick & easy</option>
-                    <option value="comfortable cook">Comfortable cook</option>
-                    <option value="adventurous chef">Adventurous chef</option>
-                  </select>
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How confident are you in the kitchen?</span>
+                  <div style={{ ...styles.chipGrid, marginTop: "8px" }}>
+                    {[["quick & easy", "Quick & easy"], ["comfortable cook", "Comfortable cook"], ["adventurous chef", "Adventurous chef"]].map(([val, label]) => (
+                      <button key={val} type="button" style={{ ...styles.chip, ...(form.cookingStyle === val ? styles.chipActive : {}) }} onClick={() => setTextField("cookingStyle", val)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
 
-                <label style={styles.label}>
-                  How long do you want to spend cooking?
-                  <select
-                    style={styles.select}
-                    value={form.cookTime}
-                    onChange={(e) => setTextField("cookTime", e.target.value)}
-                  >
-                    <option value="under 20 min">Under 20 min</option>
-                    <option value="20–40 min">20–40 min</option>
-                    <option value="no preference">No preference</option>
-                  </select>
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How long do you want to spend cooking?</span>
+                  <div style={{ ...styles.chipGrid, marginTop: "8px" }}>
+                    {[["under 20 min", "Under 20 min"], ["20–40 min", "20–40 min"], ["no preference", "No preference"]].map(([val, label]) => (
+                      <button key={val} type="button" style={{ ...styles.chip, ...(form.cookTime === val ? styles.chipActive : {}) }} onClick={() => setTextField("cookTime", val)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
 
-                <label style={styles.label}>
-                  How much variety do you want?
-                  <select
-                    style={styles.select}
-                    value={form.varietyLevel}
-                    onChange={(e) => setTextField("varietyLevel", e.target.value)}
-                  >
-                    <option value="same favorites, different days">Same favorites, different days</option>
-                    <option value="a little of everything">A little of everything</option>
-                    <option value="surprise me every meal">Surprise me every meal</option>
-                  </select>
-                </label>
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How much variety do you want?</span>
+                  <div style={{ ...styles.chipGrid, marginTop: "8px" }}>
+                    {[["same favorites, different days", "Familiar favorites"], ["a little of everything", "A little of everything"], ["surprise me every meal", "Surprise me"]].map(([val, label]) => (
+                      <button key={val} type="button" style={{ ...styles.chip, ...(form.varietyLevel === val ? styles.chipActive : {}) }} onClick={() => setTextField("varietyLevel", val)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div style={styles.section}>
@@ -1951,16 +2120,9 @@ export default function PlatewellApp() {
                     ...styles.secondaryToggle,
                     ...(form.fridgeMode ? styles.chipActive : {}),
                   }}
-                  onClick={() => {
-                    if (!form.fridgeMode && !isDevMode) {
-                      setUpgradeReason("fridge");
-                      setShowUpgradeModal(true);
-                      return;
-                    }
-                    toggleFridgeMode();
-                  }}
+                  onClick={toggleFridgeMode}
                 >
-                  {form.fridgeMode ? "Fridge Mode is on" : "🔒 Fridge Mode — Pro feature"}
+                  {form.fridgeMode ? "Fridge Mode is on" : "Fridge Mode"}
                 </button>
 
                 {!form.fridgeMode && (
@@ -1995,7 +2157,7 @@ export default function PlatewellApp() {
                         }}
                         onClick={() => setTextField("fridgeModeType", "only")}
                       >
-                        <div style={{ fontWeight: 700, marginBottom: "2px" }}>🔒 Use only these ingredients</div>
+                        <div style={{ fontWeight: 700, marginBottom: "2px" }}>Use only these ingredients</div>
                         <div style={{ fontSize: "0.82rem", opacity: 0.85 }}>Build my entire plan from only what I have — no extras.</div>
                       </button>
                       <button
@@ -2132,10 +2294,21 @@ export default function PlatewellApp() {
             {loading && (
               <div style={styles.emptyState}>
                 <div>
-                  <h2 style={{ marginBottom: "10px", color: "#124734" }}>
-                    Building your plan...
+                  <div style={{ fontSize: "2rem", marginBottom: "16px" }}>🍽️</div>
+                  <h2 style={{ marginBottom: "10px", color: "#124734", transition: "opacity 0.4s ease" }}>
+                    {loadingMessages[loadingMsgIndex]}
                   </h2>
-                  <p>Putting your preferences to work.</p>
+                  <div style={{ display: "flex", gap: "6px", justifyContent: "center", marginTop: "16px" }}>
+                    {loadingMessages.map((_, i) => (
+                      <div key={i} style={{
+                        width: i === loadingMsgIndex ? "20px" : "6px",
+                        height: "6px",
+                        borderRadius: "3px",
+                        background: i === loadingMsgIndex ? "#1f8a5b" : "#cfe5d7",
+                        transition: "all 0.4s ease",
+                      }} />
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -2638,74 +2811,6 @@ export default function PlatewellApp() {
         </main>
       </div>
 
-      {showUpgradeModal && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(18, 71, 52, 0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-          padding: "20px",
-        }}>
-          <div style={{
-            background: "#ffffff",
-            borderRadius: "24px",
-            padding: "36px 32px",
-            maxWidth: "420px",
-            width: "100%",
-            textAlign: "center",
-            boxShadow: "0 24px 60px rgba(18, 71, 52, 0.18)",
-          }}>
-            <div style={{ fontSize: "2rem", marginBottom: "12px" }}>🌿</div>
-            <h2 style={{ margin: "0 0 10px", color: "#124734", fontSize: "1.4rem" }}>
-              {upgradeReason === "plan" && "You've used your free plan this week"}
-              {upgradeReason === "days" && "Free plan supports up to 3 days"}
-              {upgradeReason === "meals" && "Free plan supports up to 3 meals per day"}
-              {upgradeReason === "swaps" && "You've used your 2 free swaps"}
-              {upgradeReason === "fridge" && "Fridge Mode is a Pro feature"}
-              {upgradeReason === "grocery" && "Grocery export is a Pro feature"}
-            </h2>
-            <p style={{ color: "#587166", fontSize: "0.95rem", lineHeight: 1.6, margin: "0 0 24px" }}>
-              Platewell Pro is coming soon — unlimited plans, 7-day meal plans, unlimited swaps, Fridge Mode, and grocery export.
-            </p>
-            <button
-              type="button"
-              style={{
-                width: "100%",
-                padding: "14px",
-                background: "#1f8a5b",
-                color: "#fff",
-                border: "none",
-                borderRadius: "14px",
-                fontWeight: 700,
-                fontSize: "0.95rem",
-                cursor: "pointer",
-                marginBottom: "10px",
-                fontFamily: "inherit",
-              }}
-              onClick={() => setShowUpgradeModal(false)}
-            >
-              Got it — coming soon!
-            </button>
-            <button
-              type="button"
-              style={{
-                background: "none",
-                border: "none",
-                color: "#6b8578",
-                cursor: "pointer",
-                fontSize: "0.88rem",
-                fontFamily: "inherit",
-              }}
-              onClick={() => setShowUpgradeModal(false)}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
