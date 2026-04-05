@@ -112,6 +112,58 @@ export default function PlatewellApp() {
   const [munchFoodAnswer, setMunchFoodAnswer] = useState("");
   const [munchBudgetAnswer, setMunchBudgetAnswer] = useState("");
 
+  // ── New user onboarding (email / phone / name / dob / gender / location / Mr. Munch) ──
+  const [showUserOnboarding, setShowUserOnboarding] = useState(
+    () => !localStorage.getItem("platewell_user_onboarded")
+  );
+  const [uoStep, setUoStep] = useState(0);
+  const [uoVisible, setUoVisible] = useState(true);
+  const [uoDirection, setUoDirection] = useState("forward");
+  const [uoData, setUoData] = useState({
+    email: "", phone: "", name: "", dob: "", gender: "", location: null,
+  });
+  const [uoEmailError, setUoEmailError] = useState("");
+  const [uoLocationStatus, setUoLocationStatus] = useState("idle"); // idle | loading | granted | denied
+
+  function uoGoTo(next, dir = "forward") {
+    setUoDirection(dir);
+    setUoVisible(false);
+    setTimeout(() => { setUoStep(next); setUoVisible(true); }, 230);
+  }
+
+  function uoRequestLocation() {
+    if (!navigator.geolocation) { setUoLocationStatus("denied"); return; }
+    setUoLocationStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUoData((d) => ({ ...d, location: { lat: pos.coords.latitude, lng: pos.coords.longitude } }));
+        setUoLocationStatus("granted");
+      },
+      () => setUoLocationStatus("denied"),
+      { timeout: 8000 }
+    );
+  }
+
+  function completeUserOnboarding() {
+    localStorage.setItem("platewell_user_onboarded", "true");
+    localStorage.setItem("platewell_user_profile", JSON.stringify(uoData));
+    localStorage.setItem("platewell_mrmunch_done", "true");
+    if (!localStorage.getItem("platewell_profile")) {
+      const base = {
+        name: uoData.name, people: "1", daysPerWeek: "5", mealsPerDay: "3",
+        dietaryGoal: "balanced", cookingStyle: "quick & easy", cookTime: "no preference",
+        cuisines: [], restrictions: [], budget: "75",
+      };
+      localStorage.setItem("platewell_profile", JSON.stringify(base));
+    }
+    if (uoData.name) setProfile((p) => ({ ...p, name: uoData.name }));
+    setShowOnboarding(false);
+    setShowMrMunch(false);
+    setUoVisible(false);
+    setTimeout(() => setShowUserOnboarding(false), 230);
+  }
+  // ── End new user onboarding state ──
+
   function advanceMunch(nextStep) {
     setMunchVisible(false);
     setTimeout(() => { setMunchStep(nextStep); setMunchVisible(true); }, 240);
@@ -1120,6 +1172,344 @@ export default function PlatewellApp() {
       textAlign: "center",
     },
   };
+
+  // ── New user onboarding flow ──
+  if (showUserOnboarding) {
+    const UO_STEPS = ["email", "phone", "name", "dob", "gender", "location", "mrmunch"];
+    const currentScreenId = UO_STEPS[uoStep];
+
+    const sharedPage = {
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#ffffff",
+      fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      padding: isMobile ? "32px 24px" : "48px 24px",
+      boxSizing: "border-box",
+    };
+
+    const card = {
+      width: "100%",
+      maxWidth: "420px",
+      display: "flex",
+      flexDirection: "column",
+      gap: "0",
+    };
+
+    const slideWrap = {
+      opacity: uoVisible ? 1 : 0,
+      transform: uoVisible
+        ? "translateX(0)"
+        : uoDirection === "forward"
+          ? "translateX(24px)"
+          : "translateX(-24px)",
+      transition: "opacity 0.23s ease, transform 0.23s ease",
+    };
+
+    const eyebrow = {
+      margin: "0 0 40px",
+      color: "#1f8a5b",
+      letterSpacing: "0.14em",
+      fontSize: "11px",
+      fontWeight: 800,
+      textTransform: "uppercase",
+    };
+
+    const bigQ = {
+      margin: "0 0 10px",
+      fontSize: isMobile ? "1.9rem" : "2.3rem",
+      lineHeight: 1.12,
+      letterSpacing: "-0.03em",
+      color: "#124734",
+      fontWeight: 800,
+    };
+
+    const sub = {
+      margin: "0 0 32px",
+      color: "#6b8578",
+      fontSize: "1rem",
+      lineHeight: 1.55,
+    };
+
+    const inp = {
+      width: "100%",
+      padding: "16px 18px",
+      borderRadius: "16px",
+      border: "2px solid #dceee3",
+      background: "#fafffe",
+      color: "#17362a",
+      fontSize: "1.05rem",
+      outline: "none",
+      boxSizing: "border-box",
+      fontFamily: "inherit",
+      transition: "border-color 0.15s ease",
+    };
+
+    const primaryBtn = {
+      width: "100%",
+      padding: "17px 16px",
+      border: "none",
+      borderRadius: "16px",
+      cursor: "pointer",
+      background: "#1f8a5b",
+      color: "white",
+      fontWeight: 700,
+      fontSize: "1rem",
+      boxShadow: "0 10px 28px rgba(31,138,91,0.22)",
+      fontFamily: "inherit",
+      marginTop: "12px",
+    };
+
+    const skipBtn = {
+      background: "none",
+      border: "none",
+      color: "#9ab3a8",
+      cursor: "pointer",
+      fontSize: "0.9rem",
+      padding: "12px 8px",
+      fontFamily: "inherit",
+      textAlign: "center",
+      width: "100%",
+      marginTop: "4px",
+    };
+
+    const progressBar = (
+      <div style={{ display: "flex", gap: "5px", marginBottom: "48px" }}>
+        {UO_STEPS.slice(0, -1).map((_, i) => (
+          <div key={i} style={{
+            flex: 1,
+            height: "3px",
+            borderRadius: "999px",
+            background: i < uoStep ? "#1f8a5b" : i === uoStep ? "#7ecba6" : "#e4f0e9",
+            transition: "background 0.3s ease",
+          }} />
+        ))}
+      </div>
+    );
+
+    const validateEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+
+    return (
+      <div style={sharedPage}>
+        <div style={card}>
+
+          {currentScreenId !== "mrmunch" && progressBar}
+
+          <div style={slideWrap}>
+
+            {/* ── Email ── */}
+            {currentScreenId === "email" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>What's your email?</h1>
+                <p style={sub}>For important updates and the occasional treat 🎁</p>
+                <input
+                  autoFocus
+                  type="email"
+                  value={uoData.email}
+                  onChange={(e) => { setUoData((d) => ({ ...d, email: e.target.value })); setUoEmailError(""); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (!validateEmail(uoData.email)) { setUoEmailError("Please enter a valid email."); return; }
+                      uoGoTo(1);
+                    }
+                  }}
+                  placeholder="you@example.com"
+                  style={inp}
+                />
+                {uoEmailError && <p style={{ color: "#c0392b", fontSize: "0.88rem", margin: "8px 0 0" }}>{uoEmailError}</p>}
+                <button
+                  type="button"
+                  style={primaryBtn}
+                  onClick={() => {
+                    if (!validateEmail(uoData.email)) { setUoEmailError("Please enter a valid email."); return; }
+                    uoGoTo(1);
+                  }}
+                >
+                  Continue →
+                </button>
+              </>
+            )}
+
+            {/* ── Phone ── */}
+            {currentScreenId === "phone" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>Got a phone number?</h1>
+                <p style={sub}>Totally optional — we'll never spam you.</p>
+                <input
+                  autoFocus
+                  type="tel"
+                  value={uoData.phone}
+                  onChange={(e) => setUoData((d) => ({ ...d, phone: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") uoGoTo(2); }}
+                  placeholder="+1 (555) 000-0000"
+                  style={inp}
+                />
+                <button type="button" style={primaryBtn} onClick={() => uoGoTo(2)}>Continue →</button>
+                <button type="button" style={skipBtn} onClick={() => uoGoTo(2)}>Skip for now</button>
+              </>
+            )}
+
+            {/* ── Name ── */}
+            {currentScreenId === "name" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>What should we call you?</h1>
+                <p style={sub}>We'll use this to make things feel a little more personal.</p>
+                <input
+                  autoFocus
+                  type="text"
+                  value={uoData.name}
+                  onChange={(e) => setUoData((d) => ({ ...d, name: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter" && uoData.name.trim()) uoGoTo(3); }}
+                  placeholder="Your first name"
+                  style={inp}
+                />
+                <button
+                  type="button"
+                  style={{ ...primaryBtn, opacity: uoData.name.trim() ? 1 : 0.5 }}
+                  onClick={() => { if (uoData.name.trim()) uoGoTo(3); }}
+                >
+                  Continue →
+                </button>
+              </>
+            )}
+
+            {/* ── Date of birth ── */}
+            {currentScreenId === "dob" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>When's your birthday?</h1>
+                <p style={sub}>Helps us tailor things just right.</p>
+                <input
+                  autoFocus
+                  type="date"
+                  value={uoData.dob}
+                  onChange={(e) => setUoData((d) => ({ ...d, dob: e.target.value }))}
+                  style={{ ...inp, colorScheme: "light" }}
+                />
+                <button type="button" style={primaryBtn} onClick={() => uoGoTo(4)}>Continue →</button>
+                <button type="button" style={skipBtn} onClick={() => uoGoTo(4)}>Skip for now</button>
+              </>
+            )}
+
+            {/* ── Gender ── */}
+            {currentScreenId === "gender" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>How do you identify?</h1>
+                <p style={sub}>Totally optional — just helps us personalise your experience.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {["Man", "Woman", "Non-binary", "Prefer not to say"].map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => { setUoData((d) => ({ ...d, gender: opt })); uoGoTo(5); }}
+                      style={{
+                        padding: "16px 18px",
+                        borderRadius: "14px",
+                        border: `2px solid ${uoData.gender === opt ? "#1f8a5b" : "#dceee3"}`,
+                        background: uoData.gender === opt ? "#f0faf4" : "#fafffe",
+                        color: "#124734",
+                        fontSize: "1rem",
+                        fontWeight: uoData.gender === opt ? 700 : 500,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" style={skipBtn} onClick={() => uoGoTo(5)}>Skip for now</button>
+              </>
+            )}
+
+            {/* ── Location ── */}
+            {currentScreenId === "location" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>Mind if we know where you are?</h1>
+                <p style={sub}>We use this to find grocery prices near you. No tracking, ever.</p>
+                {uoLocationStatus === "idle" && (
+                  <>
+                    <button
+                      type="button"
+                      style={primaryBtn}
+                      onClick={uoRequestLocation}
+                    >
+                      📍 Allow location
+                    </button>
+                    <button type="button" style={skipBtn} onClick={() => uoGoTo(6)}>Skip for now</button>
+                  </>
+                )}
+                {uoLocationStatus === "loading" && (
+                  <p style={{ color: "#6b8578", fontSize: "0.95rem", marginTop: "8px" }}>Getting your location...</p>
+                )}
+                {uoLocationStatus === "granted" && (
+                  <>
+                    <p style={{ color: "#1f8a5b", fontWeight: 600, margin: "0 0 12px" }}>📍 Location saved!</p>
+                    <button type="button" style={primaryBtn} onClick={() => uoGoTo(6)}>Continue →</button>
+                  </>
+                )}
+                {uoLocationStatus === "denied" && (
+                  <>
+                    <p style={{ color: "#9ab3a8", fontSize: "0.9rem", margin: "0 0 12px" }}>No problem — you can always add a ZIP code later.</p>
+                    <button type="button" style={primaryBtn} onClick={() => uoGoTo(6)}>Continue →</button>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── Meet Mr. Munch ── */}
+            {currentScreenId === "mrmunch" && (
+              <div style={{ textAlign: "center", padding: isMobile ? "0" : "0 16px" }}>
+                <div style={{ fontSize: "5rem", marginBottom: "24px", lineHeight: 1 }}>🍔</div>
+                <h1 style={{ ...bigQ, fontSize: isMobile ? "2rem" : "2.4rem", textAlign: "center" }}>
+                  Meet Mr. Munch
+                </h1>
+                <p style={{
+                  margin: "20px 0 36px",
+                  color: "#587166",
+                  fontSize: "1.05rem",
+                  lineHeight: 1.65,
+                  textAlign: "center",
+                }}>
+                  Hey {uoData.name ? uoData.name.charAt(0).toUpperCase() + uoData.name.slice(1) : "there"}! I'm Mr. Munch 🍔 — I'm here to make meal planning actually fun. I'll help you build meals you'll love, guide you around the app, and always have your back.
+                </p>
+                <button
+                  type="button"
+                  style={{ ...primaryBtn, fontSize: "1.05rem", padding: "18px 16px", boxShadow: "0 12px 32px rgba(31,138,91,0.28)" }}
+                  onClick={completeUserOnboarding}
+                >
+                  Let's do this! 🍽️
+                </button>
+              </div>
+            )}
+
+          </div>
+
+          {/* Back nav */}
+          {uoStep > 0 && currentScreenId !== "mrmunch" && (
+            <button
+              type="button"
+              onClick={() => uoGoTo(uoStep - 1, "backward")}
+              style={{ ...skipBtn, marginTop: "20px", color: "#9ab3a8" }}
+            >
+              ← Back
+            </button>
+          )}
+
+        </div>
+      </div>
+    );
+  }
+  // ── End new user onboarding flow ──
 
   if (showOnboarding) {
     const ob = {
