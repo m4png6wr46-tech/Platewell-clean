@@ -1,5 +1,39 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+function MrMunchFace({ size = 40 }) {
+  const s = size;
+  return (
+    <svg width={s} height={s} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: "block" }}>
+      {/* Bottom bun */}
+      <rect x="12" y="54" width="56" height="16" rx="8" fill="#c8832a"/>
+      {/* Patty */}
+      <rect x="10" y="44" width="60" height="12" rx="4" fill="#7a3e10"/>
+      {/* Cheese */}
+      <rect x="8" y="41" width="64" height="6" rx="2" fill="#f5c842"/>
+      {/* Lettuce */}
+      <ellipse cx="40" cy="39" rx="34" ry="5" fill="#4caf50"/>
+      <ellipse cx="20" cy="37" rx="8" ry="4" fill="#66bb6a"/>
+      <ellipse cx="40" cy="36" rx="8" ry="4" fill="#66bb6a"/>
+      <ellipse cx="60" cy="37" rx="8" ry="4" fill="#66bb6a"/>
+      {/* Top bun */}
+      <ellipse cx="40" cy="26" rx="30" ry="20" fill="#e8973a"/>
+      <ellipse cx="40" cy="18" rx="24" ry="12" fill="#f0a84a"/>
+      {/* Sesame seeds */}
+      <ellipse cx="30" cy="14" rx="3.5" ry="2" fill="#c8832a" transform="rotate(-20 30 14)"/>
+      <ellipse cx="50" cy="12" rx="3.5" ry="2" fill="#c8832a" transform="rotate(15 50 12)"/>
+      <ellipse cx="40" cy="10" rx="3.5" ry="2" fill="#c8832a"/>
+      {/* Eyes */}
+      <circle cx="32" cy="24" r="3" fill="#3a2010"/>
+      <circle cx="48" cy="24" r="3" fill="#3a2010"/>
+      {/* Eye shine */}
+      <circle cx="33.2" cy="22.8" r="1" fill="white"/>
+      <circle cx="49.2" cy="22.8" r="1" fill="white"/>
+      {/* Smile */}
+      <path d="M33 30 Q40 36 47 30" stroke="#3a2010" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+    </svg>
+  );
+}
+
 export default function PlatewellApp() {
   const [cuisineOptions, setCuisineOptions] = useState([]);
   const [loadingCuisines, setLoadingCuisines] = useState(true);
@@ -1469,7 +1503,7 @@ export default function PlatewellApp() {
             {/* ── Meet Mr. Munch ── */}
             {currentScreenId === "mrmunch" && (
               <div style={{ textAlign: "center", padding: isMobile ? "0" : "0 16px" }}>
-                <div style={{ fontSize: "5rem", marginBottom: "24px", lineHeight: 1 }}>🍔</div>
+                <div style={{ marginBottom: "24px", display: "flex", justifyContent: "center" }}><MrMunchFace size={110} /></div>
                 <h1 style={{ ...bigQ, fontSize: isMobile ? "2rem" : "2.4rem", textAlign: "center" }}>
                   Meet Mr. Munch
                 </h1>
@@ -2141,8 +2175,8 @@ export default function PlatewellApp() {
               <div style={{
                 width: "44px", height: "44px", borderRadius: "50%",
                 background: "#1f8a5b", display: "flex", alignItems: "center",
-                justifyContent: "center", fontSize: "1.4rem", flexShrink: 0,
-              }}>🍽️</div>
+                justifyContent: "center", flexShrink: 0, overflow: "hidden",
+              }}><MrMunchFace size={36} /></div>
               <div style={{
                 background: "#ffffff", border: "1px solid #dceee3",
                 borderRadius: "0 18px 18px 18px", padding: "14px 16px",
@@ -2150,7 +2184,7 @@ export default function PlatewellApp() {
                 boxShadow: "0 4px 16px rgba(23,64,45,0.07)",
                 maxWidth: "340px",
               }}>
-                Hey! I'm <strong>Mr. Munch</strong>, your personal meal planning assistant. I'm going to help you plan a week of meals you'll actually want to eat. 🍽️
+                Hey! I'm <strong>Mr. Munch</strong> — your personal meal planning assistant. I'm going to help you plan a week of meals you'll actually want to eat.
               </div>
             </div>
 
