@@ -1117,12 +1117,18 @@ Return ONLY valid JSON, no markdown, no code fences:
 
   const totalMeals = activeCookDays * slots.length;
   const tokensPerMeal = 600;
-  const maxTokens = Math.min(Math.max(totalMeals * tokensPerMeal, 3000), 12000);
+  const maxTokens = Math.min(Math.max(totalMeals * tokensPerMeal, 3000), 6000);
 
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: maxTokens,
-    system: "You are a professional meal planner. Return only valid JSON with no extra text, no markdown, and no code fences. Keep responses concise.",
+    system: [
+      {
+        type: "text",
+        text: "You are a professional meal planner. Return only valid JSON with no extra text, no markdown, and no code fences. Keep responses concise.",
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [
       { role: "user", content: prompt }
     ],
