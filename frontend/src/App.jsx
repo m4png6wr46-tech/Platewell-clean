@@ -2564,14 +2564,6 @@ export default function PlatewellApp() {
                   </div>
                 </div>
 
-                <div style={{ marginBottom: "16px" }}>
-                  <span style={styles.label}>How many people are you feeding?</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0", marginTop: "8px" }}>
-                    <button type="button" onClick={() => setWholeNumberField("people", String(Math.max(1, Number(form.people) - 1)))} style={{ width: "40px", height: "40px", borderRadius: "12px 0 0 12px", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>−</button>
-                    <div style={{ flex: 1, height: "40px", border: "1px solid #cfe5d7", borderLeft: "none", borderRight: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", fontWeight: 700, color: "#124734", background: "#fff" }}>{form.people || "1"}</div>
-                    <button type="button" onClick={() => setWholeNumberField("people", String(Number(form.people) + 1))} style={{ width: "40px", height: "40px", borderRadius: "0 12px 12px 0", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>+</button>
-                  </div>
-                </div>
 
                 <div style={{ marginBottom: "16px" }}>
                   <span style={styles.label}>How many days will you cook at home?</span>
