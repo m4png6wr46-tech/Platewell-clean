@@ -59,6 +59,8 @@ export default function PlatewellApp() {
           fridgeIngredients: "",
           fridgeModeType: "supplement",
           avoidFoods: "",
+          preferredStore: p.preferredStore || "",
+          householdSize: p.householdSize || "1",
         };
       }
     } catch {}
@@ -77,6 +79,8 @@ export default function PlatewellApp() {
       fridgeIngredients: "",
       fridgeModeType: "supplement",
       avoidFoods: "",
+      preferredStore: "",
+      householdSize: "1",
     };
   });
 
@@ -570,6 +574,8 @@ export default function PlatewellApp() {
       mealsPerDay: Number(form.mealsPerDay || 0),
       fridgeIngredients: form.fridgeMode ? form.fridgeIngredients : "",
       avoidFoods: form.avoidFoods || "",
+      preferredStore: form.preferredStore || "",
+      householdSize: Number(form.householdSize || 1),
       ratings,
       zipCode,
     };
@@ -2470,6 +2476,34 @@ export default function PlatewellApp() {
                     onChange={(e) => setMoneyField("budget", e.target.value)}
                   />
                 </label>
+
+                <label style={styles.label}>
+                  Where do you usually shop?
+                  <select
+                    style={styles.select}
+                    value={form.preferredStore}
+                    onChange={(e) => setTextField("preferredStore", e.target.value)}
+                  >
+                    <option value="">No preference</option>
+                    <option value="Walmart">Walmart</option>
+                    <option value="Aldi">Aldi</option>
+                    <option value="Kroger">Kroger</option>
+                    <option value="Target">Target</option>
+                    <option value="Whole Foods">Whole Foods</option>
+                    <option value="Trader Joe's">Trader Joe's</option>
+                    <option value="Costco">Costco</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+
+                <div style={{ marginBottom: "16px" }}>
+                  <span style={styles.label}>How many people are you shopping for?</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0", marginTop: "8px" }}>
+                    <button type="button" onClick={() => setWholeNumberField("householdSize", String(Math.max(1, Number(form.householdSize) - 1)))} style={{ width: "40px", height: "40px", borderRadius: "12px 0 0 12px", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                    <div style={{ flex: 1, height: "40px", border: "1px solid #cfe5d7", borderLeft: "none", borderRight: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", fontWeight: 700, color: "#124734", background: "#fff" }}>{form.householdSize || "1"}</div>
+                    <button type="button" onClick={() => setWholeNumberField("householdSize", String(Number(form.householdSize) + 1))} style={{ width: "40px", height: "40px", borderRadius: "0 12px 12px 0", border: "1px solid #cfe5d7", background: "#f8fcf9", color: "#1f8a5b", fontSize: "1.2rem", cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                  </div>
+                </div>
 
                 <div style={{ marginBottom: "16px" }}>
                   <span style={styles.label}>How many people are you feeding?</span>

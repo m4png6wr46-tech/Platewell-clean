@@ -540,10 +540,29 @@ function normalizeGroceryItems(items) {
   });
 }
 
-async function buildAIGroceryList(meals, people) {
+async function buildAIGroceryList(meals, people, { preferredStore = "", householdSize = null, weeklyBudget = null } = {}) {
   const mealSummary = meals.map((meal) => {
     return `${meal.meal} (${meal.mealType}, Day ${meal.day}): ${(meal.ingredientAmounts || []).join(", ")}`;
   }).join("\n");
+
+  const household = householdSize || people;
+  const storeContext = preferredStore
+    ? `The user shops at ${preferredStore}. Use realistic ${preferredStore} price levels for all estimates.`
+    : "Use average US grocery store prices.";
+
+  const storePricingGuide = {
+    "Aldi": "Aldi prices are 20-40% below average. Meat ~$2-4/lb, eggs ~$2/dozen, produce very cheap.",
+    "Walmart": "Walmart prices are 10-20% below average. Competitive across all categories.",
+    "Kroger": "Kroger prices are close to average US grocery prices.",
+    "Target": "Target grocery prices are 5-15% above average.",
+    "Whole Foods": "Whole Foods prices are 20-40% above average. Organic focus, premium pricing.",
+    "Trader Joe's": "Trader Joe's prices are competitive — similar to or slightly below average, unique private-label products.",
+    "Costco": "Costco sells in bulk. Price per unit is low but quantities are large. Adjust amounts accordingly.",
+  }[preferredStore] || "Use realistic average US grocery store prices.";
+
+  const budgetContext = weeklyBudget
+    ? `The user's total weekly grocery budget is $${weeklyBudget}. The sum of all estimated item prices MUST stay at or under this budget. If it won't fit, note which items are most expensive.`
+    : "";
 
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
@@ -551,7 +570,7 @@ async function buildAIGroceryList(meals, people) {
     system: "You are a grocery list assistant. Return only valid JSON with no extra text, no markdown, and no code fences.",
     messages: [{
       role: "user",
-      content: `You are building a grocery list for ${people} people based on these meals for the week:\n\n${mealSummary}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs like "0.5 lbs" or "1.5 lbs" — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy blocks/logs: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- If no meaningful quantity applies, just list the item name with no quantity\n- NEVER use decimal numbers anywhere (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
+      content: `You are building a grocery list for ${household} people based on these meals for the week:\n\n${mealSummary}\n\nStore: ${storeContext}\nPricing guidance: ${storePricingGuide}\n${budgetContext}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store. Scale all quantities for ${household} people.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null, estimatedPrice: null, and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- NEVER use decimal numbers (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include an estimatedPrice (number, in USD) for every non-staple item based on the store's pricing. estimatedPrice should reflect the cost of the listed quantity.\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "estimatedPrice": 5.98,\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "estimatedPrice": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
     }],
   });
 
@@ -891,6 +910,9 @@ async function generateMealPlanWithAI({
   ratings,
   cookTime,
   avoidFoods = "",
+  preferredStore = "",
+  householdSize = null,
+  weeklyBudget = null,
 }) {
   const expectedMealCount = activeCookDays * slots.length;
 
@@ -931,6 +953,14 @@ async function generateMealPlanWithAI({
 
   const ratingsText = buildRatingsText(ratings);
 
+  const household = householdSize || people;
+  const storeText = preferredStore
+    ? `Preferred grocery store: ${preferredStore}. Price all meals realistically for ${preferredStore} (e.g. Aldi is budget-friendly, Whole Foods is premium).`
+    : "";
+  const budgetGuardText = weeklyBudget
+    ? `Total weekly grocery budget: $${weeklyBudget}. The combined ingredient cost across ALL meals must stay within this budget. Never suggest a protein-heavy plan where meat alone would exceed the total budget. If needed, include more plant-based or cheaper protein sources.`
+    : "";
+
   const prompt = `Generate a ${activeCookDays}-day meal plan with exactly ${expectedMealCount} meals.
 
 Requirements:
@@ -941,7 +971,7 @@ Requirements:
 - Cooking skill: ${cookingStyleDesc}
 - Variety: ${varietyDesc}
 - Budget: $${budgetTargetPerMeal.toFixed(2)} per meal per person
-- People: ${people}${cookTimeDesc ? `\n- ${cookTimeDesc}` : ""}
+- People: ${people} (household size: ${household})${cookTimeDesc ? `\n- ${cookTimeDesc}` : ""}${storeText ? `\n- ${storeText}` : ""}${budgetGuardText ? `\n- ${budgetGuardText}` : ""}
 - ${fridgeText}
 ${ratingsText ? `\n${ratingsText}` : ""}
 
@@ -1268,6 +1298,8 @@ app.post("/generate", async (req, res) => {
       zipCode,
       cookTime,
       avoidFoods,
+      preferredStore,
+      householdSize,
     } = req.body;
 
     if (
@@ -1358,6 +1390,9 @@ app.post("/generate", async (req, res) => {
         ratings,
         cookTime,
         avoidFoods: avoidFoods || "",
+        preferredStore: preferredStore || "",
+        householdSize: Number(householdSize) || numericPeople,
+        weeklyBudget: numericBudget,
       });
     } catch (aiError) {
       console.error("AI generation error:", aiError);
@@ -1423,7 +1458,7 @@ app.post("/generate", async (req, res) => {
 
     if (!(selectedFridgeIngredients.length > 0 && normalizedFridgeModeType === "only")) {
       try {
-        aiGroceryItems = await buildAIGroceryList(meals, numericPeople);
+        aiGroceryItems = await buildAIGroceryList(meals, numericPeople, { preferredStore: preferredStore || "", householdSize: Number(householdSize) || numericPeople, weeklyBudget: numericBudget });
         groceryList = aiGroceryItems
           ? aiGroceryItems.map((item) => item.displayAmount ? `${item.displayAmount} ${item.name}` : item.name)
           : buildSimplifiedGroceryList(meals);
@@ -1755,7 +1790,7 @@ app.post("/regenerateWithLeftovers", async (req, res) => {
 
     if (!(selectedFridgeIngredients.length > 0 && fridgeModeType === "only")) {
       try {
-        aiGroceryItems = await buildAIGroceryList(nonLeftoverMeals, numericPeople);
+        aiGroceryItems = await buildAIGroceryList(nonLeftoverMeals, numericPeople, { preferredStore: preferredStore || "", householdSize: Number(householdSize) || numericPeople, weeklyBudget: numericBudget });
         groceryList = aiGroceryItems
           ? aiGroceryItems.map((item) => item.displayAmount ? `${item.displayAmount} ${item.name}` : item.name)
           : buildSimplifiedGroceryList(nonLeftoverMeals);
