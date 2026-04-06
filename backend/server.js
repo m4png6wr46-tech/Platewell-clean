@@ -859,24 +859,56 @@ function buildRepeatedMealsSummary(meals) {
     .map(([meal, count]) => ({ meal, timesUsed: count }));
 }
 
+// Handles the multi-turn web search flow: first call may return tool_use blocks,
+// which must be sent back as tool_results before the model returns its final text answer.
+async function runWithWebSearch({ system, userContent, maxRounds = 4 }) {
+  const params = {
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    tools: [{ type: "web_search_20250305", name: "web_search" }],
+    system,
+  };
+
+  let messages = [{ role: "user", content: userContent }];
+
+  for (let round = 0; round < maxRounds; round++) {
+    const response = await anthropic.messages.create({ ...params, messages });
+
+    // Always append the assistant turn so the conversation stays valid
+    messages = [...messages, { role: "assistant", content: response.content }];
+
+    if (response.stop_reason !== "tool_use") {
+      // Model is done — return the final text block
+      return response.content.find((b) => b.type === "text") || null;
+    }
+
+    // Build tool_result blocks for every tool_use block in this response
+    const toolResults = response.content
+      .filter((b) => b.type === "tool_use")
+      .map((b) => ({
+        type: "tool_result",
+        tool_use_id: b.id,
+        content: b.type === "tool_use" ? (b.content ?? "") : "",
+      }));
+
+    // Continue the conversation with the tool results
+    messages = [...messages, { role: "user", content: toolResults }];
+  }
+
+  return null;
+}
+
 async function fetchIngredientPrices(ingredientNames, { preferredStore = "", zipCode = "" } = {}) {
   if (!ingredientNames || ingredientNames.length === 0) return {};
   const storeHint = preferredStore ? ` at ${preferredStore}` : "";
   const locationHint = zipCode ? ` near zip code ${zipCode}` : " in the US";
   const itemLines = ingredientNames.slice(0, 20).map((i) => `- ${i}`).join("\n");
 
-  const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    tools: [{ type: "web_search_20250305", name: "web_search" }],
-    system: 'You are a grocery pricing assistant. Search for current prices and return ONLY valid JSON. Schema: {"prices":{"ingredient name": price_as_number}}',
-    messages: [{
-      role: "user",
-      content: `Search for current 2025 grocery prices${storeHint}${locationHint} for these ingredients:\n${itemLines}\n\nReturn a JSON object mapping each ingredient to its realistic current price (number, USD) for a typical shopping quantity (e.g. 1 lb meat, 1 bunch herbs, 1 can goods). Return valid JSON only, no markdown.`,
-    }],
+  const textBlock = await runWithWebSearch({
+    system: 'You are a grocery pricing assistant. Search for current prices then return ONLY valid JSON with no markdown. Schema: {"prices":{"ingredient name": price_as_number}}',
+    userContent: `Search for current 2025 grocery prices${storeHint}${locationHint} for these ingredients:\n${itemLines}\n\nReturn a JSON object mapping each ingredient to its realistic current price (number, USD) for a typical shopping quantity (e.g. 1 lb meat, 1 bunch herbs, 1 can goods). Return valid JSON only, no markdown.`,
   });
 
-  const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock?.text) return {};
   try {
     const cleaned = textBlock.text.replace(/```json\n?/gi, "").replace(/```\n?/g, "").trim();
@@ -894,18 +926,11 @@ async function fetchGroceryPriceContext(groceryList, zipCode, { preferredStore =
   const storeHint = preferredStore ? ` at ${preferredStore}` : "";
   const locationHint = zipCode ? ` near zip code ${zipCode}` : " in the US";
 
-  const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    tools: [{ type: "web_search_20250305", name: "web_search" }],
-    system: 'You are a grocery pricing assistant. After searching, return ONLY valid JSON — no markdown, no commentary, no code fences. Schema: {"priceEstimates":[{"item":"exact item string from input","estimatedPrice":0.00}],"estimatedTotal":0.00,"priceSource":"string","disclaimer":"string"}',
-    messages: [{
-      role: "user",
-      content: `Search for current 2025 grocery prices${storeHint}${locationHint} for these items:\n${itemLines}\n\nFor each item, estimate a realistic total cost for the listed quantity. Sum all items for estimatedTotal. Use the exact item strings from the input as the "item" field. Return valid JSON only.`,
-    }],
+  const textBlock = await runWithWebSearch({
+    system: 'You are a grocery pricing assistant. Search for current prices then return ONLY valid JSON — no markdown, no commentary, no code fences. Schema: {"priceEstimates":[{"item":"exact item string from input","estimatedPrice":0.00}],"estimatedTotal":0.00,"priceSource":"string","disclaimer":"string"}',
+    userContent: `Search for current 2025 grocery prices${storeHint}${locationHint} for these items:\n${itemLines}\n\nFor each item, estimate a realistic total cost for the listed quantity. Sum all items for estimatedTotal. Use the exact item strings from the input as the "item" field. Return valid JSON only.`,
   });
 
-  const textBlock = response.content.find((block) => block.type === "text");
   if (!textBlock?.text) return null;
 
   try {
