@@ -3078,12 +3078,18 @@ export default function PlatewellApp() {
 
                   {result.groceryPriceEstimate && (
                     <div style={styles.priceEstimateSection}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                        <span style={{ fontWeight: 700, color: "#124734" }}>Estimated grocery total</span>
-                        <span style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1f8a5b" }}>
-                          ~${Number(result.groceryPriceEstimate.estimatedTotal).toFixed(2)}
-                        </span>
-                      </div>
+                      {result.groceryPriceEstimate.budgetSummary ? (
+                        <p style={{ fontWeight: 700, color: "#124734", margin: "0 0 6px", fontSize: "0.95rem" }}>
+                          {result.groceryPriceEstimate.budgetSummary}
+                        </p>
+                      ) : (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                          <span style={{ fontWeight: 700, color: "#124734" }}>Estimated grocery total</span>
+                          <span style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1f8a5b" }}>
+                            ~${Number(result.groceryPriceEstimate.estimatedTotal).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
                       <p style={{ fontSize: "0.75rem", color: "#aab4af", margin: "4px 0 0" }}>
                         {result.groceryPriceEstimate.disclaimer}
                       </p>

@@ -540,7 +540,7 @@ function normalizeGroceryItems(items) {
   });
 }
 
-async function buildAIGroceryList(meals, people, { preferredStore = "", householdSize = null, weeklyBudget = null } = {}) {
+async function buildAIGroceryList(meals, people, { preferredStore = "", householdSize = null, weeklyBudget = null, zipCode = "" } = {}) {
   const mealSummary = meals.map((meal) => {
     return `${meal.meal} (${meal.mealType}, Day ${meal.day}): ${(meal.ingredientAmounts || []).join(", ")}`;
   }).join("\n");
@@ -560,8 +560,22 @@ async function buildAIGroceryList(meals, people, { preferredStore = "", househol
     "Costco": "Costco sells in bulk. Price per unit is low but quantities are large. Adjust amounts accordingly.",
   }[preferredStore] || "Use realistic average US grocery store prices.";
 
+  // Fetch real current prices via web search before building the list
+  const keyIngredients = [...new Set(
+    meals.flatMap((m) => (m.ingredientAmounts || []).map((i) => i.replace(/^\d+[\w\s./]*?\s+/, "").trim()))
+  )].filter((i) => i.length > 2).slice(0, 20);
+
+  let realPrices = {};
+  try {
+    realPrices = await fetchIngredientPrices(keyIngredients, { preferredStore, zipCode });
+  } catch { /* fall through to static guidance */ }
+
+  const realPricesText = Object.keys(realPrices).length > 0
+    ? `\nReal searched prices to use as reference:\n${Object.entries(realPrices).map(([k, v]) => `- ${k}: $${Number(v).toFixed(2)}`).join("\n")}`
+    : "";
+
   const budgetContext = weeklyBudget
-    ? `The user's total weekly grocery budget is $${weeklyBudget}. The sum of all estimated item prices MUST stay at or under this budget. If it won't fit, note which items are most expensive.`
+    ? `The user's total weekly grocery budget is $${weeklyBudget}. The sum of all estimatedPrice values for non-staple items MUST stay at or under this budget. If the total would exceed the budget, reduce quantities or swap expensive items for cheaper alternatives. If the total comes in well under budget (more than 15% below), try to add value — suggest a better cut of meat, an extra vegetable, or a snack item — to get closer to the budget without going over.`
     : "";
 
   const response = await anthropic.messages.create({
@@ -570,7 +584,7 @@ async function buildAIGroceryList(meals, people, { preferredStore = "", househol
     system: "You are a grocery list assistant. Return only valid JSON with no extra text, no markdown, and no code fences.",
     messages: [{
       role: "user",
-      content: `You are building a grocery list for ${household} people based on these meals for the week:\n\n${mealSummary}\n\nStore: ${storeContext}\nPricing guidance: ${storePricingGuide}\n${budgetContext}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store. Scale all quantities for ${household} people.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null, estimatedPrice: null, and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- NEVER use decimal numbers (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include an estimatedPrice (number, in USD) for every non-staple item based on the store's pricing. estimatedPrice should reflect the cost of the listed quantity.\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "estimatedPrice": 5.98,\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "estimatedPrice": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
+      content: `You are building a grocery list for ${household} people based on these meals for the week:\n\n${mealSummary}\n\nStore: ${storeContext}\nPricing guidance: ${storePricingGuide}${realPricesText}\n${budgetContext}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store. Scale all quantities for ${household} people.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null, estimatedPrice: null, and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- NEVER use decimal numbers (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include an estimatedPrice (number, in USD) for every non-staple item based on the store's pricing. estimatedPrice should reflect the cost of the listed quantity.\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "estimatedPrice": 5.98,\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "estimatedPrice": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
     }],
   });
 
@@ -845,9 +859,39 @@ function buildRepeatedMealsSummary(meals) {
     .map(([meal, count]) => ({ meal, timesUsed: count }));
 }
 
-async function fetchGroceryPriceContext(groceryList, zipCode) {
+async function fetchIngredientPrices(ingredientNames, { preferredStore = "", zipCode = "" } = {}) {
+  if (!ingredientNames || ingredientNames.length === 0) return {};
+  const storeHint = preferredStore ? ` at ${preferredStore}` : "";
+  const locationHint = zipCode ? ` near zip code ${zipCode}` : " in the US";
+  const itemLines = ingredientNames.slice(0, 20).map((i) => `- ${i}`).join("\n");
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    tools: [{ type: "web_search_20250305", name: "web_search" }],
+    system: 'You are a grocery pricing assistant. Search for current prices and return ONLY valid JSON. Schema: {"prices":{"ingredient name": price_as_number}}',
+    messages: [{
+      role: "user",
+      content: `Search for current 2025 grocery prices${storeHint}${locationHint} for these ingredients:\n${itemLines}\n\nReturn a JSON object mapping each ingredient to its realistic current price (number, USD) for a typical shopping quantity (e.g. 1 lb meat, 1 bunch herbs, 1 can goods). Return valid JSON only, no markdown.`,
+    }],
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock?.text) return {};
+  try {
+    const cleaned = textBlock.text.replace(/```json\n?/gi, "").replace(/```\n?/g, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return {};
+    return JSON.parse(jsonMatch[0]).prices || {};
+  } catch {
+    return {};
+  }
+}
+
+async function fetchGroceryPriceContext(groceryList, zipCode, { preferredStore = "", weeklyBudget = null } = {}) {
   if (!groceryList || groceryList.length === 0) return null;
   const itemLines = groceryList.slice(0, 25).map((i) => `- ${i}`).join("\n");
+  const storeHint = preferredStore ? ` at ${preferredStore}` : "";
   const locationHint = zipCode ? ` near zip code ${zipCode}` : " in the US";
 
   const response = await anthropic.messages.create({
@@ -855,12 +899,10 @@ async function fetchGroceryPriceContext(groceryList, zipCode) {
     max_tokens: 1024,
     tools: [{ type: "web_search_20250305", name: "web_search" }],
     system: 'You are a grocery pricing assistant. After searching, return ONLY valid JSON — no markdown, no commentary, no code fences. Schema: {"priceEstimates":[{"item":"exact item string from input","estimatedPrice":0.00}],"estimatedTotal":0.00,"priceSource":"string","disclaimer":"string"}',
-    messages: [
-      {
-        role: "user",
-        content: `Search for current average US grocery store prices${locationHint} for these items:\n${itemLines}\n\nFor each item, estimate a realistic total cost for the listed quantity. Sum all items for estimatedTotal. Use the exact item strings from the input as the "item" field in each priceEstimate. Return valid JSON only.`,
-      },
-    ],
+    messages: [{
+      role: "user",
+      content: `Search for current 2025 grocery prices${storeHint}${locationHint} for these items:\n${itemLines}\n\nFor each item, estimate a realistic total cost for the listed quantity. Sum all items for estimatedTotal. Use the exact item strings from the input as the "item" field. Return valid JSON only.`,
+    }],
   });
 
   const textBlock = response.content.find((block) => block.type === "text");
@@ -872,11 +914,25 @@ async function fetchGroceryPriceContext(groceryList, zipCode) {
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed.priceEstimates)) return null;
+    const estimatedTotal = Number(parsed.estimatedTotal) || 0;
+
+    let budgetSummary = null;
+    if (weeklyBudget && weeklyBudget > 0) {
+      const diff = weeklyBudget - estimatedTotal;
+      const pct = Math.round((estimatedTotal / weeklyBudget) * 100);
+      if (diff < 0) {
+        budgetSummary = `Estimated total: $${estimatedTotal.toFixed(2)} — $${Math.abs(diff).toFixed(2)} over your $${weeklyBudget.toFixed(2)} budget`;
+      } else {
+        budgetSummary = `Estimated total: $${estimatedTotal.toFixed(2)} of your $${weeklyBudget.toFixed(2)} budget (${pct}% used, $${diff.toFixed(2)} remaining)`;
+      }
+    }
+
     return {
       priceEstimates: parsed.priceEstimates,
-      estimatedTotal: Number(parsed.estimatedTotal) || 0,
-      priceSource: parsed.priceSource || "US grocery averages",
+      estimatedTotal,
+      priceSource: parsed.priceSource || (preferredStore ? `${preferredStore} prices` : "US grocery averages"),
       disclaimer: parsed.disclaimer || "Prices are estimates and may vary by store and location.",
+      budgetSummary,
     };
   } catch {
     return null;
@@ -1458,7 +1514,7 @@ app.post("/generate", async (req, res) => {
 
     if (!(selectedFridgeIngredients.length > 0 && normalizedFridgeModeType === "only")) {
       try {
-        aiGroceryItems = await buildAIGroceryList(meals, numericPeople, { preferredStore: preferredStore || "", householdSize: Number(householdSize) || numericPeople, weeklyBudget: numericBudget });
+        aiGroceryItems = await buildAIGroceryList(meals, numericPeople, { preferredStore: preferredStore || "", householdSize: Number(householdSize) || numericPeople, weeklyBudget: numericBudget, zipCode: zipCode || "" });
         groceryList = aiGroceryItems
           ? aiGroceryItems.map((item) => item.displayAmount ? `${item.displayAmount} ${item.name}` : item.name)
           : buildSimplifiedGroceryList(meals);
@@ -1510,7 +1566,7 @@ app.post("/generate", async (req, res) => {
 
     let groceryPriceEstimate = null;
     try {
-      groceryPriceEstimate = await fetchGroceryPriceContext(groceryList, zipCode);
+      groceryPriceEstimate = await fetchGroceryPriceContext(groceryList, zipCode, { preferredStore: preferredStore || "", weeklyBudget: numericBudget });
     } catch (priceError) {
       console.error("Grocery price estimation failed, continuing without it:", priceError);
     }
