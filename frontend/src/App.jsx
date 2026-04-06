@@ -3106,7 +3106,16 @@ export default function PlatewellApp() {
                                     <strong style={{ fontWeight: 600 }}>{itemName}</strong>
                                   </span>
                                   {itemIsStaple && (
-                                    <span style={{ fontSize: "0.7rem", color: "#aab4af" }}>staple</span>
+                                    <span style={{
+                                      fontSize: "0.65rem",
+                                      color: "#8fa89a",
+                                      background: "#edf5f0",
+                                      borderRadius: "4px",
+                                      padding: "2px 6px",
+                                      flexShrink: 0,
+                                      letterSpacing: "0.02em",
+                                      marginLeft: "4px",
+                                    }}>pantry staple</span>
                                   )}
                                 </div>
                                 {isActive && itemExactTotal && (

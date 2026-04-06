@@ -546,11 +546,56 @@ function roundToShoppingLbs(lbs) {
   return `${Math.round(lbs * 2) / 2} lbs`;
 }
 
+function enforceGroceryBudget(groceryItems, weeklyBudget) {
+  if (!weeklyBudget || weeklyBudget <= 0) return groceryItems;
+
+  const calcTotal = (items) =>
+    items
+      .filter((i) => !i.isStaple && i.estimatedPrice != null)
+      .reduce((sum, i) => sum + Number(i.estimatedPrice || 0), 0);
+
+  let items = [...groceryItems];
+
+  for (let pass = 0; pass < 20 && calcTotal(items) > weeklyBudget; pass++) {
+    // Rank non-staple priced items by cost descending
+    const ranked = items
+      .map((item, idx) => ({ item, idx }))
+      .filter(({ item }) => !item.isStaple && item.estimatedPrice != null)
+      .sort((a, b) => Number(b.item.estimatedPrice) - Number(a.item.estimatedPrice));
+
+    if (ranked.length === 0) break;
+
+    const { item: target, idx } = ranked[0];
+    const amountStr = String(target.displayAmount || "");
+    const lbsMatch = amountStr.match(/^(\d+)\s*lbs?$/i);
+
+    if (lbsMatch) {
+      const currentLbs = parseInt(lbsMatch[1]);
+      if (currentLbs > 1) {
+        // Reduce by 1 lb
+        const newLbs = currentLbs - 1;
+        const pricePerLb = Number(target.estimatedPrice) / currentLbs;
+        const newPrice = parseFloat((pricePerLb * newLbs).toFixed(2));
+        const newAmount = `${newLbs} ${newLbs === 1 ? "lb" : "lbs"}`;
+        items = items.map((it, i) =>
+          i === idx ? { ...it, displayAmount: newAmount, estimatedPrice: newPrice } : it
+        );
+        continue;
+      }
+    }
+
+    // Can't reduce further — remove the most expensive item
+    items = items.filter((_, i) => i !== idx);
+  }
+
+  return items;
+}
+
 function normalizeGroceryItems(items) {
   return items.map((item) => {
     const nameLower = item.name.toLowerCase();
     const isKnownStaple = PANTRY_STAPLES.has(nameLower) ||
-      [...PANTRY_STAPLES].some((s) => nameLower.includes(s));
+      [...PANTRY_STAPLES].some((s) => s.includes(" ") && nameLower.includes(s));
     if (isKnownStaple) {
       return { ...item, displayAmount: null, isStaple: true };
     }
@@ -612,7 +657,8 @@ async function buildAIGroceryList(meals, people, { preferredStore = "", househol
     return item;
   });
 
-  return normalizeGroceryItems(enriched);
+  const normalized = normalizeGroceryItems(enriched);
+  return weeklyBudget ? enforceGroceryBudget(normalized, weeklyBudget) : normalized;
 }
 
 function categorizeGroceryList(items) {
