@@ -546,6 +546,26 @@ function roundToShoppingLbs(lbs) {
   return `${Math.round(lbs * 2) / 2} lbs`;
 }
 
+const STRAY_MEASUREMENT_RE = /^\d+(\.\d+)?\s*(g|kg|mg|ml|l|oz|fl\s*oz|lb|lbs|tsp|tbsp|cups?)?\.?$/i;
+
+function sanitizeGroceryItemName(name) {
+  return String(name || "")
+    .replace(/[\s\(\[]*(?:pantry\s+)?staple[\s\)\]]*$/i, "")
+    .replace(/[.,;:!?]+$/, "")
+    .trim();
+}
+
+function sanitizeGroceryItems(items) {
+  return items
+    .map((item) => ({ ...item, name: sanitizeGroceryItemName(item.name) }))
+    .filter((item) => {
+      const n = item.name.trim();
+      if (n.length < 2) return false;
+      if (STRAY_MEASUREMENT_RE.test(n)) return false;
+      return true;
+    });
+}
+
 function enforceGroceryBudget(groceryItems, weeklyBudget) {
   if (!weeklyBudget || weeklyBudget <= 0) return groceryItems;
 
@@ -657,7 +677,8 @@ async function buildAIGroceryList(meals, people, { preferredStore = "", househol
     return item;
   });
 
-  const normalized = normalizeGroceryItems(enriched);
+  const sanitized = sanitizeGroceryItems(enriched);
+  const normalized = normalizeGroceryItems(sanitized);
   return weeklyBudget ? enforceGroceryBudget(normalized, weeklyBudget) : normalized;
 }
 
@@ -1029,6 +1050,18 @@ async function generateMealPlanWithAI({
   const storeText = preferredStore
     ? `Preferred grocery store: ${preferredStore}. Price all meals realistically for ${preferredStore} (e.g. Aldi is budget-friendly, Whole Foods is premium).`
     : "";
+
+  let budgetTierText = "";
+  if (weeklyBudget != null) {
+    if (weeklyBudget < 75) {
+      budgetTierText = `INGREDIENT RESTRICTION — weekly budget is $${weeklyBudget}: Use ONLY everyday supermarket ingredients available at any Walmart, Kroger, or similar store. Absolutely forbidden: scallops, wagyu, branzino, quail eggs, pancetta, truffle, foie gras, lobster, crab, duck breast, veal, or any specialty/restaurant-grade protein. Proteins must come from: chicken (any cut), ground beef, ground turkey, pork chops, eggs, canned tuna, canned salmon, tofu, lentils, or canned beans. Keep ingredient costs realistic — a week of meals for ${household} people on $${weeklyBudget} requires inexpensive staples.`;
+    } else if (weeklyBudget < 150) {
+      budgetTierText = `Budget is $${weeklyBudget}/week for ${household} people. Use standard grocery store ingredients. Avoid luxury proteins (wagyu, lobster, scallops, branzino). Stick to chicken, beef, pork, salmon, shrimp, eggs, or legumes.`;
+    } else {
+      budgetTierText = `Budget is $${weeklyBudget}/week for ${household} people. Standard to mid-range ingredients — no need for luxury items unless the cuisine calls for it.`;
+    }
+  }
+
   const budgetGuardText = weeklyBudget
     ? `Total weekly grocery budget: $${weeklyBudget}. The combined ingredient cost across ALL meals must stay within this budget. Never suggest a protein-heavy plan where meat alone would exceed the total budget. If needed, include more plant-based or cheaper protein sources.`
     : "";
@@ -1043,7 +1076,7 @@ Requirements:
 - Cooking skill: ${cookingStyleDesc}
 - Variety: ${varietyDesc}
 - Budget: $${budgetTargetPerMeal.toFixed(2)} per meal per person
-- People: ${people} (household size: ${household})${cookTimeDesc ? `\n- ${cookTimeDesc}` : ""}${storeText ? `\n- ${storeText}` : ""}${budgetGuardText ? `\n- ${budgetGuardText}` : ""}
+- People: ${people} (household size: ${household})${cookTimeDesc ? `\n- ${cookTimeDesc}` : ""}${storeText ? `\n- ${storeText}` : ""}${budgetTierText ? `\n- ${budgetTierText}` : ""}${budgetGuardText ? `\n- ${budgetGuardText}` : ""}
 - ${fridgeText}
 ${ratingsText ? `\n${ratingsText}` : ""}
 
