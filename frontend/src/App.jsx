@@ -162,6 +162,11 @@ export default function PlatewellApp() {
   });
   const [uoEmailError, setUoEmailError] = useState("");
   const [uoLocationStatus, setUoLocationStatus] = useState("idle"); // idle | loading | granted | denied
+  const [uoDobMonth, setUoDobMonth] = useState("");
+  const [uoDobDay, setUoDobDay] = useState("");
+  const [uoDobYear, setUoDobYear] = useState("");
+  const uoDobDayRef = React.useRef(null);
+  const uoDobYearRef = React.useRef(null);
 
   function uoGoTo(next, dir = "forward") {
     setUoDirection(dir);
@@ -1424,14 +1429,68 @@ export default function PlatewellApp() {
                 <p style={eyebrow}>PLATEWELL</p>
                 <h1 style={bigQ}>When's your birthday?</h1>
                 <p style={sub}>Helps us tailor things just right.</p>
-                <input
-                  autoFocus
-                  type="date"
-                  value={uoData.dob}
-                  onChange={(e) => setUoData((d) => ({ ...d, dob: e.target.value }))}
-                  style={{ ...inp, colorScheme: "light" }}
-                />
-                <button type="button" style={primaryBtn} onClick={() => uoGoTo(4)}>Continue →</button>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <input
+                    autoFocus
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={2}
+                    value={uoDobMonth}
+                    placeholder="MM"
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 2);
+                      setUoDobMonth(val);
+                      if (val.length === 2) uoDobDayRef.current?.focus();
+                    }}
+                    style={{ ...inp, textAlign: "center", flex: 1, fontSize: "1.4rem", letterSpacing: "0.1em" }}
+                  />
+                  <span style={{ color: "#cfe5d7", fontSize: "1.8rem", fontWeight: 300, flexShrink: 0 }}>/</span>
+                  <input
+                    ref={uoDobDayRef}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={2}
+                    value={uoDobDay}
+                    placeholder="DD"
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 2);
+                      setUoDobDay(val);
+                      if (val.length === 2) uoDobYearRef.current?.focus();
+                    }}
+                    style={{ ...inp, textAlign: "center", flex: 1, fontSize: "1.4rem", letterSpacing: "0.1em" }}
+                  />
+                  <span style={{ color: "#cfe5d7", fontSize: "1.8rem", fontWeight: 300, flexShrink: 0 }}>/</span>
+                  <input
+                    ref={uoDobYearRef}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={uoDobYear}
+                    placeholder="YYYY"
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      setUoDobYear(val);
+                      if (val.length === 4) {
+                        const dob = `${val}-${uoDobMonth.padStart(2,"0")}-${uoDobDay.padStart(2,"0")}`;
+                        setUoData((d) => ({ ...d, dob }));
+                      }
+                    }}
+                    style={{ ...inp, textAlign: "center", flex: 1.4, fontSize: "1.4rem", letterSpacing: "0.1em" }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  style={{ ...primaryBtn, marginTop: "20px" }}
+                  onClick={() => {
+                    if (uoDobMonth || uoDobDay || uoDobYear) {
+                      const dob = `${uoDobYear}-${uoDobMonth.padStart(2,"0")}-${uoDobDay.padStart(2,"0")}`;
+                      setUoData((d) => ({ ...d, dob }));
+                    }
+                    uoGoTo(4);
+                  }}
+                >
+                  Continue →
+                </button>
                 <button type="button" style={skipBtn} onClick={() => uoGoTo(4)}>Skip for now</button>
               </>
             )}
