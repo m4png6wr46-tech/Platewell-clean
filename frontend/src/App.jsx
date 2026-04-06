@@ -158,7 +158,7 @@ export default function PlatewellApp() {
   const [uoVisible, setUoVisible] = useState(true);
   const [uoDirection, setUoDirection] = useState("forward");
   const [uoData, setUoData] = useState({
-    email: "", phone: "", name: "", dob: "", gender: "", location: null,
+    email: "", phone: "", name: "", dob: "", gender: "", location: null, store: "",
   });
   const [uoEmailError, setUoEmailError] = useState("");
   const [uoLocationStatus, setUoLocationStatus] = useState("idle"); // idle | loading | granted | denied
@@ -175,14 +175,24 @@ export default function PlatewellApp() {
   }
 
   function uoRequestLocation() {
-    if (!navigator.geolocation) { setUoLocationStatus("denied"); return; }
+    if (!navigator.geolocation) {
+      setUoLocationStatus("denied");
+      setTimeout(() => uoGoTo(uoStep + 1), 800);
+      return;
+    }
     setUoLocationStatus("loading");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setUoData((d) => ({ ...d, location: { lat: pos.coords.latitude, lng: pos.coords.longitude } }));
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUoData((d) => ({ ...d, location: coords }));
+        try { localStorage.setItem("platewell_location", JSON.stringify(coords)); } catch {}
         setUoLocationStatus("granted");
+        setTimeout(() => uoGoTo(uoStep + 1), 900);
       },
-      () => setUoLocationStatus("denied"),
+      () => {
+        setUoLocationStatus("denied");
+        setTimeout(() => uoGoTo(uoStep + 1), 800);
+      },
       { timeout: 8000 }
     );
   }
@@ -191,11 +201,13 @@ export default function PlatewellApp() {
     localStorage.setItem("platewell_user_onboarded", "true");
     localStorage.setItem("platewell_user_profile", JSON.stringify(uoData));
     localStorage.setItem("platewell_mrmunch_done", "true");
+    if (uoData.store) setForm((f) => ({ ...f, preferredStore: uoData.store }));
     if (!localStorage.getItem("platewell_profile")) {
       const base = {
         name: uoData.name, people: "1", daysPerWeek: "5", mealsPerDay: "3",
         dietaryGoal: "balanced", cookingStyle: "quick & easy", cookTime: "no preference",
         cuisines: [], restrictions: [], budget: "75",
+        preferredStore: uoData.store || "",
       };
       localStorage.setItem("platewell_profile", JSON.stringify(base));
     }
@@ -244,6 +256,25 @@ export default function PlatewellApp() {
     }, 1800);
     return () => clearInterval(interval);
   }, [loading]);
+
+  useEffect(() => {
+    const id = "mrmunch-keyframes";
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      @keyframes munchBounceIn {
+        0%   { transform: translateY(-180px) scaleY(0.8); opacity: 0; }
+        55%  { transform: translateY(0px) scaleY(1.12) scaleX(0.92); opacity: 1; }
+        70%  { transform: translateY(-28px) scaleY(0.95) scaleX(1.04); }
+        82%  { transform: translateY(0px) scaleY(1.07) scaleX(0.96); }
+        91%  { transform: translateY(-10px) scaleY(0.98) scaleX(1.01); }
+        97%  { transform: translateY(0px) scaleY(1.03) scaleX(0.99); }
+        100% { transform: translateY(0px) scaleY(1) scaleX(1); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
 
   function toggleCheckedItem(item) {
     setCheckedItems((prev) => ({ ...prev, [item]: !prev[item] }));
@@ -1220,7 +1251,7 @@ export default function PlatewellApp() {
 
   // ── New user onboarding flow ──
   if (showUserOnboarding) {
-    const UO_STEPS = ["email", "phone", "name", "dob", "gender", "location", "mrmunch"];
+    const UO_STEPS = ["welcome", "email", "name", "dob", "gender", "location", "store", "mrmunch"];
     const currentScreenId = UO_STEPS[uoStep];
 
     const sharedPage = {
@@ -1340,9 +1371,49 @@ export default function PlatewellApp() {
       <div style={sharedPage}>
         <div style={card}>
 
-          {currentScreenId !== "mrmunch" && progressBar}
+          {currentScreenId !== "mrmunch" && currentScreenId !== "welcome" && progressBar}
 
           <div style={slideWrap}>
+
+            {/* ── Welcome ── */}
+            {currentScreenId === "welcome" && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: isMobile ? "0" : "0 8px" }}>
+                <div style={{ fontSize: "4.5rem", marginBottom: "32px", lineHeight: 1 }}>🍽️</div>
+                <h1 style={{
+                  margin: "0 0 20px",
+                  fontSize: isMobile ? "2.4rem" : "3rem",
+                  lineHeight: 1.08,
+                  letterSpacing: "-0.04em",
+                  color: "#124734",
+                  fontWeight: 800,
+                }}>
+                  Welcome to Platewell
+                </h1>
+                <p style={{
+                  margin: "0 0 48px",
+                  color: "#6b8578",
+                  fontSize: "1.08rem",
+                  lineHeight: 1.65,
+                  maxWidth: "320px",
+                }}>
+                  Real food. Real budget. Real life.<br />Let's make meal planning actually enjoyable.
+                </p>
+                <button
+                  type="button"
+                  style={{
+                    ...primaryBtn,
+                    fontSize: "1.05rem",
+                    padding: "18px 16px",
+                    borderRadius: "18px",
+                    boxShadow: "0 12px 32px rgba(31,138,91,0.25)",
+                    letterSpacing: "0.01em",
+                  }}
+                  onClick={() => uoGoTo(1)}
+                >
+                  Let's Get Cooking →
+                </button>
+              </div>
+            )}
 
             {/* ── Email ── */}
             {currentScreenId === "email" && (
@@ -1358,7 +1429,7 @@ export default function PlatewellApp() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       if (!validateEmail(uoData.email)) { setUoEmailError("Please enter a valid email."); return; }
-                      uoGoTo(1);
+                      uoGoTo(uoStep + 1);
                     }
                   }}
                   placeholder="you@example.com"
@@ -1370,7 +1441,7 @@ export default function PlatewellApp() {
                   style={primaryBtn}
                   onClick={() => {
                     if (!validateEmail(uoData.email)) { setUoEmailError("Please enter a valid email."); return; }
-                    uoGoTo(1);
+                    uoGoTo(uoStep + 1);
                   }}
                 >
                   Continue →
@@ -1378,25 +1449,6 @@ export default function PlatewellApp() {
               </>
             )}
 
-            {/* ── Phone ── */}
-            {currentScreenId === "phone" && (
-              <>
-                <p style={eyebrow}>PLATEWELL</p>
-                <h1 style={bigQ}>Got a phone number?</h1>
-                <p style={sub}>Totally optional — we'll never spam you.</p>
-                <input
-                  autoFocus
-                  type="tel"
-                  value={uoData.phone}
-                  onChange={(e) => setUoData((d) => ({ ...d, phone: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === "Enter") uoGoTo(2); }}
-                  placeholder="+1 (555) 000-0000"
-                  style={inp}
-                />
-                <button type="button" style={primaryBtn} onClick={() => uoGoTo(2)}>Continue →</button>
-                <button type="button" style={skipBtn} onClick={() => uoGoTo(2)}>Skip for now</button>
-              </>
-            )}
 
             {/* ── Name ── */}
             {currentScreenId === "name" && (
@@ -1409,14 +1461,14 @@ export default function PlatewellApp() {
                   type="text"
                   value={uoData.name}
                   onChange={(e) => setUoData((d) => ({ ...d, name: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === "Enter" && uoData.name.trim()) uoGoTo(3); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && uoData.name.trim()) uoGoTo(uoStep + 1); }}
                   placeholder="Your first name"
                   style={inp}
                 />
                 <button
                   type="button"
                   style={{ ...primaryBtn, opacity: uoData.name.trim() ? 1 : 0.5 }}
-                  onClick={() => { if (uoData.name.trim()) uoGoTo(3); }}
+                  onClick={() => { if (uoData.name.trim()) uoGoTo(uoStep + 1); }}
                 >
                   Continue →
                 </button>
@@ -1486,12 +1538,12 @@ export default function PlatewellApp() {
                       const dob = `${uoDobYear}-${uoDobMonth.padStart(2,"0")}-${uoDobDay.padStart(2,"0")}`;
                       setUoData((d) => ({ ...d, dob }));
                     }
-                    uoGoTo(4);
+                    uoGoTo(uoStep + 1);
                   }}
                 >
                   Continue →
                 </button>
-                <button type="button" style={skipBtn} onClick={() => uoGoTo(4)}>Skip for now</button>
+                <button type="button" style={skipBtn} onClick={() => uoGoTo(uoStep + 1)}>Skip for now</button>
               </>
             )}
 
@@ -1502,11 +1554,11 @@ export default function PlatewellApp() {
                 <h1 style={bigQ}>How do you identify?</h1>
                 <p style={sub}>Totally optional — just helps us personalise your experience.</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {["Man", "Woman", "Non-binary", "Prefer not to say"].map((opt) => (
+                  {["Male", "Female", "Non-binary", "Prefer not to say"].map((opt) => (
                     <button
                       key={opt}
                       type="button"
-                      onClick={() => { setUoData((d) => ({ ...d, gender: opt })); uoGoTo(5); }}
+                      onClick={() => { setUoData((d) => ({ ...d, gender: opt })); uoGoTo(uoStep + 1); }}
                       style={{
                         padding: "16px 18px",
                         borderRadius: "14px",
@@ -1525,7 +1577,7 @@ export default function PlatewellApp() {
                     </button>
                   ))}
                 </div>
-                <button type="button" style={skipBtn} onClick={() => uoGoTo(5)}>Skip for now</button>
+                <button type="button" style={skipBtn} onClick={() => uoGoTo(uoStep + 1)}>Skip for now</button>
               </>
             )}
 
@@ -1537,38 +1589,70 @@ export default function PlatewellApp() {
                 <p style={sub}>We use this to find grocery prices near you. No tracking, ever.</p>
                 {uoLocationStatus === "idle" && (
                   <>
-                    <button
-                      type="button"
-                      style={primaryBtn}
-                      onClick={uoRequestLocation}
-                    >
+                    <button type="button" style={primaryBtn} onClick={uoRequestLocation}>
                       📍 Allow location
                     </button>
-                    <button type="button" style={skipBtn} onClick={() => uoGoTo(6)}>Skip for now</button>
+                    <button type="button" style={skipBtn} onClick={() => uoGoTo(uoStep + 1)}>Skip for now</button>
                   </>
                 )}
                 {uoLocationStatus === "loading" && (
-                  <p style={{ color: "#6b8578", fontSize: "0.95rem", marginTop: "8px" }}>Getting your location...</p>
+                  <p style={{ color: "#6b8578", fontSize: "0.95rem", marginTop: "8px", textAlign: "center" }}>Getting your location...</p>
                 )}
                 {uoLocationStatus === "granted" && (
-                  <>
-                    <p style={{ color: "#1f8a5b", fontWeight: 600, margin: "0 0 12px" }}>📍 Location saved!</p>
-                    <button type="button" style={primaryBtn} onClick={() => uoGoTo(6)}>Continue →</button>
-                  </>
+                  <p style={{ color: "#1f8a5b", fontWeight: 600, textAlign: "center" }}>📍 Got it — moving on!</p>
                 )}
                 {uoLocationStatus === "denied" && (
-                  <>
-                    <p style={{ color: "#9ab3a8", fontSize: "0.9rem", margin: "0 0 12px" }}>No problem — you can always add a ZIP code later.</p>
-                    <button type="button" style={primaryBtn} onClick={() => uoGoTo(6)}>Continue →</button>
-                  </>
+                  <p style={{ color: "#9ab3a8", fontSize: "0.9rem", textAlign: "center" }}>No problem — moving on.</p>
                 )}
+              </>
+            )}
+
+            {/* ── Store preference ── */}
+            {currentScreenId === "store" && (
+              <>
+                <p style={eyebrow}>PLATEWELL</p>
+                <h1 style={bigQ}>Where do you usually shop?</h1>
+                <p style={sub}>We'll use this to estimate realistic prices for your grocery list.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {["Walmart", "Aldi", "Kroger", "Target", "Whole Foods", "Trader Joe's", "Costco", "Other"].map((store) => (
+                    <button
+                      key={store}
+                      type="button"
+                      onClick={() => { setUoData((d) => ({ ...d, store })); uoGoTo(uoStep + 1); }}
+                      style={{
+                        padding: "16px 18px",
+                        borderRadius: "14px",
+                        border: `2px solid ${uoData.store === store ? "#1f8a5b" : "#dceee3"}`,
+                        background: uoData.store === store ? "#f0faf4" : "#fafffe",
+                        color: "#124734",
+                        fontSize: "1rem",
+                        fontWeight: uoData.store === store ? 700 : 500,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {store}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" style={skipBtn} onClick={() => uoGoTo(uoStep + 1)}>Skip for now</button>
               </>
             )}
 
             {/* ── Meet Mr. Munch ── */}
             {currentScreenId === "mrmunch" && (
               <div style={{ textAlign: "center", padding: isMobile ? "0" : "0 16px" }}>
-                <div style={{ marginBottom: "24px", display: "flex", justifyContent: "center" }}><MrMunchFace size={110} /></div>
+                <div style={{
+                  marginBottom: "24px",
+                  display: "flex",
+                  justifyContent: "center",
+                  animation: "munchBounceIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both",
+                  transformOrigin: "bottom center",
+                }}>
+                  <MrMunchFace size={110} />
+                </div>
                 <h1 style={{ ...bigQ, fontSize: isMobile ? "2rem" : "2.4rem", textAlign: "center" }}>
                   Meet Mr. Munch
                 </h1>
@@ -1594,7 +1678,7 @@ export default function PlatewellApp() {
           </div>
 
           {/* Back nav */}
-          {uoStep > 0 && currentScreenId !== "mrmunch" && (
+          {uoStep > 0 && currentScreenId !== "mrmunch" && currentScreenId !== "welcome" && (
             <button
               type="button"
               onClick={() => uoGoTo(uoStep - 1, "backward")}
@@ -2536,24 +2620,6 @@ export default function PlatewellApp() {
                   />
                 </label>
 
-                <label style={styles.label}>
-                  Where do you usually shop?
-                  <select
-                    style={styles.select}
-                    value={form.preferredStore}
-                    onChange={(e) => setTextField("preferredStore", e.target.value)}
-                  >
-                    <option value="">No preference</option>
-                    <option value="Walmart">Walmart</option>
-                    <option value="Aldi">Aldi</option>
-                    <option value="Kroger">Kroger</option>
-                    <option value="Target">Target</option>
-                    <option value="Whole Foods">Whole Foods</option>
-                    <option value="Trader Joe's">Trader Joe's</option>
-                    <option value="Costco">Costco</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </label>
 
                 <div style={{ marginBottom: "16px" }}>
                   <span style={styles.label}>How many people are you shopping for?</span>
