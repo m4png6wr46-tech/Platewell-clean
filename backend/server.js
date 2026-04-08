@@ -636,7 +636,7 @@ function normalizeGroceryItems(items) {
   });
 }
 
-async function buildAIGroceryList(meals, people, { preferredStore = "", householdSize = null, weeklyBudget = null } = {}) {
+async function buildAIGroceryList(meals, people, { preferredStore = "", householdSize = null, weeklyBudget = null, pantryItems = [] } = {}) {
   const mealSummary = meals.map((meal) => {
     return `${meal.meal} (${meal.mealType}, Day ${meal.day}): ${(meal.ingredientAmounts || []).join(", ")}`;
   }).join("\n");
@@ -650,13 +650,17 @@ async function buildAIGroceryList(meals, people, { preferredStore = "", househol
     ? `The user's total weekly grocery budget is $${weeklyBudget}. The sum of all estimatedPrice values for non-staple items MUST stay at or under this budget. If the total would exceed the budget, reduce quantities or swap expensive items for cheaper alternatives. If the total comes in well under budget (more than 15% below), try to add value — suggest a better cut of meat, an extra vegetable, or a snack item — to get closer to the budget without going over.`
     : "";
 
+  const pantryContext = pantryItems.length > 0
+    ? `The user already has these pantry items at home — do NOT include them in the grocery list: ${pantryItems.join(", ")}.`
+    : "";
+
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 8192,
     system: "You are a grocery list assistant. Return only valid JSON with no extra text, no markdown, and no code fences.",
     messages: [{
       role: "user",
-      content: `You are building a grocery list for ${household} people based on these meals for the week:\n\n${mealSummary}\n\nStore: ${storeContext}\n${budgetContext}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store. Scale all quantities for ${household} people.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null, estimatedPrice: null, and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nFor everything else, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- NEVER use decimal numbers (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include an estimatedPrice (number, in USD) for every non-staple item. estimatedPrice should reflect the cost of the listed quantity.\n- Include exactTotal for reference\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "estimatedPrice": 5.98,\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "estimatedPrice": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
+      content: `You are building a grocery list for ${household} people based on these meals for the week:\n\n${mealSummary}\n\nStore: ${storeContext}\n${budgetContext}\n${pantryContext}\n\nBuild a clean, human-readable grocery list that a real person would write before going to the store. Scale all quantities for ${household} people.\n\nCRITICAL STAPLE RULE: The following must ALWAYS have displayAmount: null, estimatedPrice: null, and isStaple: true — no exceptions: olive oil, butter, salt, pepper, sugar, flour, soy sauce, vinegar (any kind), honey, spices, dried herbs, hot sauce, mayonnaise, mustard, cooking oil, garlic powder, onion powder, balsamic vinegar, white wine, red wine, any broth or stock.\n\nNAMING RULES — these apply to every single item without exception:\n- The "name" field must contain ONLY the ingredient name — nothing else\n- NEVER append "staple", "pantry staple", "(staple)", or any label to a name. Wrong: "Olive Oil staple". Right: "Olive Oil"\n- NEVER include measurement quantities in the name field. Wrong: "21 tbsp Olive Oil" or "500g Chicken". Right: "Olive Oil" or "Chicken Breast"\n- NEVER include a standalone measurement as a grocery item. An item with a name like "3g" or "100ml" or "2 tbsp" is invalid and must not appear\n- The name must be just the ingredient: "Chicken Thighs", "Spinach", "Greek Yogurt"\n\nFor non-staple items, use ONLY the units a real person writes on a shopping list:\n- Items sold by count: whole numbers only — "4 Onions", "2 Lemons", "1 dozen Eggs"\n- Canned/jarred goods: "1 can Coconut Milk", "2 cans Diced Tomatoes"\n- Packaged/bagged goods: "1 bag Rice", "1 bag Frozen Peas", "1 box Pasta"\n- Meat and fish: round up to whole pounds only — "2 lbs Chicken Thighs", "1 lb Ground Beef". NEVER use decimal lbs — always round up to the next whole number\n- Fresh herbs: "1 bunch Cilantro", "1 bunch Basil"\n- Dairy: "1 block Feta", "1 container Greek Yogurt"\n- Bread: "1 loaf Bread"\n- Liquids in cartons: "1 carton Chicken Broth"\n- NEVER use decimal numbers (no "0.25", "1.5", "0.5", etc.)\n- NEVER use tbsp, tsp, cups, ml, fl oz, oz, or grams in displayAmount — those are cooking units not shopping units\n- Capitalize each ingredient name\n- Include an estimatedPrice (number, in USD) for every non-staple item. estimatedPrice should reflect the cost of the listed quantity.\n- The exactTotal field is for internal reference only — it must never appear in the name field\n\nReturn this exact JSON format:\n{\n  "groceryItems": [\n    {\n      "name": "Chicken Thighs",\n      "displayAmount": "2 lbs",\n      "estimatedPrice": 5.98,\n      "exactTotal": "900g total across 3 meals",\n      "isStaple": false\n    },\n    {\n      "name": "Olive Oil",\n      "displayAmount": null,\n      "estimatedPrice": null,\n      "exactTotal": "21 tbsp total across 5 meals",\n      "isStaple": true\n    }\n  ]\n}`,
     }],
   });
 
@@ -679,7 +683,10 @@ async function buildAIGroceryList(meals, people, { preferredStore = "", househol
 
   const sanitized = sanitizeGroceryItems(enriched);
   const normalized = normalizeGroceryItems(sanitized);
-  return weeklyBudget ? enforceGroceryBudget(normalized, weeklyBudget) : normalized;
+  const withoutPantry = pantryItems.length > 0
+    ? normalized.filter((item) => !pantryItems.some((p) => item.name.toLowerCase().includes(p) || p.includes(item.name.toLowerCase())))
+    : normalized;
+  return weeklyBudget ? enforceGroceryBudget(withoutPantry, weeklyBudget) : withoutPantry;
 }
 
 function categorizeGroceryList(items) {
@@ -1410,7 +1417,12 @@ app.post("/generate", async (req, res) => {
       avoidFoods,
       preferredStore,
       householdSize,
+      pantryItems,
     } = req.body;
+
+    const normalizedPantryItems = Array.isArray(pantryItems)
+      ? pantryItems.map((s) => String(s).toLowerCase().trim()).filter(Boolean)
+      : [];
 
     if (
       budget == null ||
@@ -1568,7 +1580,7 @@ app.post("/generate", async (req, res) => {
 
     if (!(selectedFridgeIngredients.length > 0 && normalizedFridgeModeType === "only")) {
       try {
-        aiGroceryItems = await buildAIGroceryList(meals, numericPeople, { preferredStore: preferredStore || "", householdSize: Number(householdSize) || numericPeople, weeklyBudget: numericBudget });
+        aiGroceryItems = await buildAIGroceryList(meals, numericPeople, { preferredStore: preferredStore || "", householdSize: Number(householdSize) || numericPeople, weeklyBudget: numericBudget, pantryItems: normalizedPantryItems });
         groceryList = aiGroceryItems
           ? aiGroceryItems.map((item) => item.displayAmount ? `${item.displayAmount} ${item.name}` : item.name)
           : buildSimplifiedGroceryList(meals);

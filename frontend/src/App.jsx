@@ -142,6 +142,104 @@ export default function PlatewellApp() {
   const [checkedItems, setCheckedItems] = useState({});
   const [activeGroceryItem, setActiveGroceryItem] = useState(null);
 
+  const [activeTab, setActiveTab] = useState("meal-plan");
+
+  const PANTRY_CATEGORIES = [
+    {
+      category: "Oils & Fats",
+      items: ["Olive Oil", "Vegetable Oil", "Butter", "Coconut Oil"],
+    },
+    {
+      category: "Spices & Herbs",
+      items: ["Salt", "Black Pepper", "Garlic Powder", "Onion Powder", "Paprika", "Cumin", "Dried Oregano", "Dried Thyme", "Cinnamon", "Red Pepper Flakes"],
+    },
+    {
+      category: "Condiments & Sauces",
+      items: ["Soy Sauce", "Hot Sauce", "Honey", "Mayonnaise", "Mustard", "Ketchup", "Vinegar"],
+    },
+    {
+      category: "Grains & Baking",
+      items: ["White Rice", "Flour", "Sugar", "Oats", "Pasta", "Breadcrumbs", "Baking Powder"],
+    },
+    {
+      category: "Canned Goods",
+      items: ["Canned Diced Tomatoes", "Canned Tomato Sauce", "Chicken Broth", "Vegetable Broth", "Coconut Milk", "Canned Chickpeas", "Canned Black Beans"],
+    },
+  ];
+
+  const [pantryChecked, setPantryChecked] = useState(() => {
+    try {
+      const saved = localStorage.getItem("platewell_pantry");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
+  function togglePantryItem(name) {
+    setPantryChecked((prev) => {
+      const next = { ...prev, [name]: !prev[name] };
+      try { localStorage.setItem("platewell_pantry", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  const [customPantryItems, setCustomPantryItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem("platewell_pantry_custom");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [pantryInput, setPantryInput] = useState("");
+
+  function addCustomPantryItem() {
+    const name = pantryInput.trim();
+    if (!name) return;
+    const normalized = name.charAt(0).toUpperCase() + name.slice(1);
+    if (customPantryItems.some((i) => i.name.toLowerCase() === normalized.toLowerCase())) {
+      setPantryInput("");
+      return;
+    }
+    const next = [...customPantryItems, { name: normalized, checked: true }];
+    setCustomPantryItems(next);
+    try { localStorage.setItem("platewell_pantry_custom", JSON.stringify(next)); } catch {}
+    setPantryInput("");
+    // Also mark as checked in pantryChecked
+    setPantryChecked((prev) => {
+      const updated = { ...prev, [normalized]: true };
+      try { localStorage.setItem("platewell_pantry", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }
+
+  function toggleCustomPantryItem(name) {
+    const next = customPantryItems.map((i) =>
+      i.name === name ? { ...i, checked: !i.checked } : i
+    );
+    setCustomPantryItems(next);
+    try { localStorage.setItem("platewell_pantry_custom", JSON.stringify(next)); } catch {}
+    setPantryChecked((prev) => {
+      const updated = { ...prev, [name]: !prev[name] };
+      try { localStorage.setItem("platewell_pantry", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }
+
+  function deleteCustomPantryItem(name) {
+    const next = customPantryItems.filter((i) => i.name !== name);
+    setCustomPantryItems(next);
+    try { localStorage.setItem("platewell_pantry_custom", JSON.stringify(next)); } catch {}
+    setPantryChecked((prev) => {
+      const updated = { ...prev };
+      delete updated[name];
+      try { localStorage.setItem("platewell_pantry", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  }
+
+  const checkedPantryItems = [
+    ...Object.entries(pantryChecked).filter(([, v]) => v).map(([k]) => k),
+    ...customPantryItems.filter((i) => i.checked && !pantryChecked[i.name]).map((i) => i.name),
+  ];
+
   const [showMrMunch, setShowMrMunch] = useState(
     () => !localStorage.getItem("platewell_mrmunch_done")
   );
@@ -614,6 +712,7 @@ export default function PlatewellApp() {
       householdSize: Number(form.householdSize || 1),
       ratings,
       zipCode,
+      pantryItems: checkedPantryItems,
     };
   }
 
@@ -2603,7 +2702,183 @@ export default function PlatewellApp() {
           )}
         </header>
 
-        <main style={styles.layout}>
+        {/* Tab bar */}
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+          {[["meal-plan", "🍽️ Meal Plan"], ["pantry", "🧂 My Pantry"]].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id)}
+              style={{
+                padding: "10px 20px",
+                borderRadius: "999px",
+                border: activeTab === id ? "none" : "1px solid #cfe5d7",
+                background: activeTab === id ? "#1f8a5b" : "#f8fcf9",
+                color: activeTab === id ? "#ffffff" : "#295240",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "all 0.15s ease",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "pantry" && (
+          <div style={{ ...styles.panel, padding: "24px", marginBottom: "20px" }}>
+            {/* Mr. Munch message */}
+            <div style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "14px",
+              background: "#f0faf4",
+              borderRadius: "16px",
+              padding: "16px",
+              marginBottom: "24px",
+            }}>
+              <div style={{ flexShrink: 0 }}>
+                <MrMunchFace size={48} />
+              </div>
+              <p style={{ margin: 0, color: "#124734", fontSize: "0.95rem", lineHeight: 1.5 }}>
+                <strong>Tell me what's already in your pantry</strong> and I won't add it to your grocery list!
+              </p>
+            </div>
+
+            {/* Custom item input */}
+            <div style={{ marginBottom: "28px" }}>
+              <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
+                Add a custom item
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input
+                  type="text"
+                  placeholder="e.g. Tahini, Gochujang, Panko..."
+                  value={pantryInput}
+                  onChange={(e) => setPantryInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomPantryItem(); } }}
+                  style={{
+                    ...styles.input,
+                    marginTop: 0,
+                    flex: 1,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={addCustomPantryItem}
+                  style={{
+                    padding: "0 20px",
+                    borderRadius: "14px",
+                    border: "none",
+                    background: "#1f8a5b",
+                    color: "#ffffff",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Custom (My Pantry) section */}
+            {customPantryItems.length > 0 && (
+              <div style={{ marginBottom: "28px" }}>
+                <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
+                  My Pantry
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {customPantryItems.map(({ name, checked }) => (
+                    <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", borderRadius: "12px", background: checked ? "#f0faf4" : "#f8fcf9", border: `1.5px solid ${checked ? "#c5e8d4" : "#e2ede7"}` }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleCustomPantryItem(name)}
+                        style={{
+                          width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0,
+                          border: checked ? "none" : "1.5px solid #aac9b8",
+                          background: checked ? "#1f8a5b" : "transparent",
+                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                        }}
+                      >
+                        {checked && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </button>
+                      <span style={{ flex: 1, fontSize: "0.9rem", color: checked ? "#124734" : "#6b8578", fontWeight: checked ? 500 : 400, textDecoration: checked ? "none" : "line-through" }}>
+                        {name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => deleteCustomPantryItem(name)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "#aab4af", fontSize: "1rem", padding: "0 4px", lineHeight: 1, fontFamily: "inherit" }}
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pre-populated categories */}
+            {PANTRY_CATEGORIES.map(({ category, items }) => (
+              <div key={category} style={{ marginBottom: "20px" }}>
+                <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
+                  {category}
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {items.map((item) => {
+                    const on = !!pantryChecked[item];
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => togglePantryItem(item)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          padding: "8px 14px",
+                          borderRadius: "999px",
+                          border: on ? "1.5px solid #1f8a5b" : "1.5px solid #cfe5d7",
+                          background: on ? "#e9f7ef" : "#f8fcf9",
+                          color: on ? "#124734" : "#587166",
+                          fontSize: "0.88rem",
+                          fontWeight: on ? 600 : 400,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <span style={{
+                          width: "14px", height: "14px", borderRadius: "4px",
+                          border: on ? "none" : "1.5px solid #aac9b8",
+                          background: on ? "#1f8a5b" : "transparent",
+                          flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {on && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3 5.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </span>
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {checkedPantryItems.length > 0 && (
+              <p style={{ margin: "16px 0 0", fontSize: "0.85rem", color: "#6b8578" }}>
+                ✓ <strong>{checkedPantryItems.length}</strong> item{checkedPantryItems.length === 1 ? "" : "s"} marked as in your pantry — {checkedPantryItems.length === 1 ? "it" : "they"} won't appear on your grocery list.
+              </p>
+            )}
+          </div>
+        )}
+
+        <main style={{ ...styles.layout, display: activeTab === "pantry" ? "none" : styles.layout.display }}>
           <section style={{ ...styles.panel, ...styles.formPanel }}>
             <form onSubmit={generatePlan}>
               <div style={styles.section}>
