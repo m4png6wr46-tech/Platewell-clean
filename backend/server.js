@@ -1398,6 +1398,44 @@ app.get("/cuisines", (req, res) => {
   res.json({ cuisines: SUPPORTED_CUISINES });
 });
 
+const PANTRY_CLASSIFY_CATEGORIES = [
+  "Oils & Fats",
+  "Spices & Herbs",
+  "Condiments & Sauces",
+  "Grains & Baking",
+  "Canned Goods",
+  "Proteins",
+  "Produce",
+  "Dairy",
+  "Other",
+];
+
+app.post("/classify-pantry-item", async (req, res) => {
+  try {
+    const { itemName } = req.body;
+    if (!itemName || typeof itemName !== "string") {
+      return res.status(400).json({ error: "itemName is required" });
+    }
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 32,
+      system: "You are a grocery categorization assistant. Reply with ONLY the category name, nothing else.",
+      messages: [{
+        role: "user",
+        content: `Categorize this pantry ingredient into exactly one of these categories:\n${PANTRY_CLASSIFY_CATEGORIES.join(", ")}\n\nIngredient: "${itemName.trim()}"\n\nReply with only the category name.`,
+      }],
+    });
+    const raw = (response.content?.[0]?.text || "").trim();
+    const category = PANTRY_CLASSIFY_CATEGORIES.find(
+      (c) => raw.toLowerCase() === c.toLowerCase()
+    ) || "Other";
+    return res.json({ category });
+  } catch (err) {
+    console.error("classify-pantry-item error:", err);
+    return res.status(500).json({ category: "Other" });
+  }
+});
+
 app.post("/generate", async (req, res) => {
   try {
     const {

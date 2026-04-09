@@ -182,6 +182,7 @@ export default function PlatewellApp() {
     });
   }
 
+  // customPantryItems: [{name, checked, category}]
   const [customPantryItems, setCustomPantryItems] = useState(() => {
     try {
       const saved = localStorage.getItem("platewell_pantry_custom");
@@ -189,20 +190,35 @@ export default function PlatewellApp() {
     } catch { return []; }
   });
   const [pantryInput, setPantryInput] = useState("");
+  const [pantryClassifying, setPantryClassifying] = useState(false);
 
-  function addCustomPantryItem() {
+  async function addCustomPantryItem() {
     const name = pantryInput.trim();
-    if (!name) return;
+    if (!name || pantryClassifying) return;
     const normalized = name.charAt(0).toUpperCase() + name.slice(1);
     if (customPantryItems.some((i) => i.name.toLowerCase() === normalized.toLowerCase())) {
       setPantryInput("");
       return;
     }
-    const next = [...customPantryItems, { name: normalized, checked: true }];
+    setPantryInput("");
+    setPantryClassifying(true);
+    let category = "Other";
+    try {
+      const res = await fetch(`${API_BASE_URL}/classify-pantry-item`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemName: normalized }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        category = data.category || "Other";
+      }
+    } catch { /* fall through to Other */ }
+    setPantryClassifying(false);
+    const newItem = { name: normalized, checked: true, category };
+    const next = [...customPantryItems, newItem];
     setCustomPantryItems(next);
     try { localStorage.setItem("platewell_pantry_custom", JSON.stringify(next)); } catch {}
-    setPantryInput("");
-    // Also mark as checked in pantryChecked
     setPantryChecked((prev) => {
       const updated = { ...prev, [normalized]: true };
       try { localStorage.setItem("platewell_pantry", JSON.stringify(updated)); } catch {}
@@ -2768,107 +2784,114 @@ export default function PlatewellApp() {
                 <button
                   type="button"
                   onClick={addCustomPantryItem}
+                  disabled={pantryClassifying}
                   style={{
                     padding: "0 20px",
                     borderRadius: "14px",
                     border: "none",
-                    background: "#1f8a5b",
+                    background: pantryClassifying ? "#a8d5bc" : "#1f8a5b",
                     color: "#ffffff",
                     fontWeight: 600,
                     fontSize: "0.9rem",
-                    cursor: "pointer",
+                    cursor: pantryClassifying ? "default" : "pointer",
                     fontFamily: "inherit",
                     whiteSpace: "nowrap",
+                    minWidth: "64px",
                   }}
                 >
-                  Add
+                  {pantryClassifying ? "…" : "Add"}
                 </button>
               </div>
+              {pantryClassifying && (
+                <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "#6b8578" }}>
+                  Figuring out where to put that…
+                </p>
+              )}
             </div>
 
-            {/* Custom (My Pantry) section */}
-            {customPantryItems.length > 0 && (
-              <div style={{ marginBottom: "28px" }}>
-                <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
-                  My Pantry
-                </p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {customPantryItems.map(({ name, checked }) => (
-                    <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", borderRadius: "12px", background: checked ? "#f0faf4" : "#f8fcf9", border: `1.5px solid ${checked ? "#c5e8d4" : "#e2ede7"}` }}>
-                      <button
-                        type="button"
-                        onClick={() => toggleCustomPantryItem(name)}
-                        style={{
-                          width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0,
-                          border: checked ? "none" : "1.5px solid #aac9b8",
-                          background: checked ? "#1f8a5b" : "transparent",
-                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
-                        }}
-                      >
-                        {checked && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                      </button>
-                      <span style={{ flex: 1, fontSize: "0.9rem", color: checked ? "#124734" : "#6b8578", fontWeight: checked ? 500 : 400, textDecoration: checked ? "none" : "line-through" }}>
-                        {name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => deleteCustomPantryItem(name)}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "#aab4af", fontSize: "1rem", padding: "0 4px", lineHeight: 1, fontFamily: "inherit" }}
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Categories: pre-populated + custom items merged in */}
+            {(() => {
+              const ALL_CATEGORIES = [
+                ...PANTRY_CATEGORIES.map((c) => c.category),
+                "Proteins", "Produce", "Dairy", "Other",
+              ].filter((c, i, a) => a.indexOf(c) === i);
 
-            {/* Pre-populated categories */}
-            {PANTRY_CATEGORIES.map(({ category, items }) => (
-              <div key={category} style={{ marginBottom: "20px" }}>
-                <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
-                  {category}
-                </p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  {items.map((item) => {
-                    const on = !!pantryChecked[item];
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => togglePantryItem(item)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "6px",
-                          padding: "8px 14px",
-                          borderRadius: "999px",
-                          border: on ? "1.5px solid #1f8a5b" : "1.5px solid #cfe5d7",
-                          background: on ? "#e9f7ef" : "#f8fcf9",
-                          color: on ? "#124734" : "#587166",
-                          fontSize: "0.88rem",
-                          fontWeight: on ? 600 : 400,
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          transition: "all 0.15s ease",
-                        }}
-                      >
-                        <span style={{
-                          width: "14px", height: "14px", borderRadius: "4px",
-                          border: on ? "none" : "1.5px solid #aac9b8",
-                          background: on ? "#1f8a5b" : "transparent",
-                          flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+              return ALL_CATEGORIES.map((category) => {
+                const prePopulated = (PANTRY_CATEGORIES.find((c) => c.category === category)?.items) || [];
+                const custom = customPantryItems.filter((i) => i.category === category);
+                if (prePopulated.length === 0 && custom.length === 0) return null;
+                return (
+                  <div key={category} style={{ marginBottom: "20px" }}>
+                    <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
+                      {category}
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      {prePopulated.map((item) => {
+                        const on = !!pantryChecked[item];
+                        return (
+                          <button
+                            key={item}
+                            type="button"
+                            onClick={() => togglePantryItem(item)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "6px",
+                              padding: "8px 14px", borderRadius: "999px",
+                              border: on ? "1.5px solid #1f8a5b" : "1.5px solid #cfe5d7",
+                              background: on ? "#e9f7ef" : "#f8fcf9",
+                              color: on ? "#124734" : "#587166",
+                              fontSize: "0.88rem", fontWeight: on ? 600 : 400,
+                              cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease",
+                            }}
+                          >
+                            <span style={{
+                              width: "14px", height: "14px", borderRadius: "4px",
+                              border: on ? "none" : "1.5px solid #aac9b8",
+                              background: on ? "#1f8a5b" : "transparent",
+                              flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                              {on && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3 5.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </span>
+                            {item}
+                          </button>
+                        );
+                      })}
+                      {custom.map(({ name, checked }) => (
+                        <div key={name} style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "7px 10px 7px 12px", borderRadius: "999px",
+                          border: checked ? "1.5px solid #1f8a5b" : "1.5px solid #cfe5d7",
+                          background: checked ? "#e9f7ef" : "#f8fcf9",
                         }}>
-                          {on && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3 5.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                        </span>
-                        {item}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+                          <button
+                            type="button"
+                            onClick={() => toggleCustomPantryItem(name)}
+                            style={{
+                              width: "14px", height: "14px", borderRadius: "4px", flexShrink: 0,
+                              border: checked ? "none" : "1.5px solid #aac9b8",
+                              background: checked ? "#1f8a5b" : "transparent",
+                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                            }}
+                          >
+                            {checked && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3 5.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          </button>
+                          <span style={{ fontSize: "0.88rem", color: checked ? "#124734" : "#587166", fontWeight: checked ? 600 : 400 }}>
+                            {name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => deleteCustomPantryItem(name)}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#aab4af", fontSize: "0.9rem", padding: "0 2px", lineHeight: 1, fontFamily: "inherit", marginLeft: "2px" }}
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
 
             {checkedPantryItems.length > 0 && (
               <p style={{ margin: "16px 0 0", fontSize: "0.85rem", color: "#6b8578" }}>
