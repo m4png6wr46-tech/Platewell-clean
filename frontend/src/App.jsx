@@ -1,4 +1,84 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { jsPDF } from "jspdf";
+
+const GROCERY_ITEMS = [
+  // Proteins
+  "Chicken breast","Chicken thighs","Chicken drumsticks","Whole chicken","Chicken sausage",
+  "Ground beef","Ground turkey","Ground lamb","Beef steak","Beef stew meat",
+  "Pork chops","Pork tenderloin","Bacon","Salmon fillet","Tilapia",
+  "White fish fillet","Shrimp","Canned tuna","Canned salmon","Eggs",
+  "Tofu","Tempeh","Canned chickpeas","Canned black beans","Canned kidney beans",
+  "Dried lentils","Turkey breast",
+  // Produce
+  "Banana","Apple","Orange","Lemon","Lime","Avocado","Tomato","Cherry tomatoes",
+  "Cucumber","Zucchini","Bell pepper","Onion","Garlic","Broccoli","Cauliflower",
+  "Spinach","Kale","Lettuce","Mixed greens","Sweet potato","Potato","Carrot",
+  "Celery","Mushroom","Corn","Green beans","Asparagus","Blueberries","Strawberries",
+  "Mixed vegetables","Frozen broccoli","Frozen peas","Frozen corn",
+  // Dairy
+  "Milk","Butter","Cheddar cheese","Mozzarella","Feta cheese","Parmesan",
+  "Greek yogurt","Sour cream","Cream cheese","Heavy cream","Cottage cheese",
+  "Almond milk","Oat milk",
+  // Grains & Bread
+  "White rice","Brown rice","Pasta","Whole wheat bread","Whole grain bread",
+  "Pita bread","Tortillas","Oats","Quinoa","Couscous","Burger buns","Granola","Breadcrumbs",
+  // Pantry & Spices
+  "Olive oil","Vegetable oil","Salt","Black pepper","Garlic powder","Onion powder",
+  "Paprika","Cumin","Dried oregano","Dried thyme","Cinnamon","Mixed herbs",
+  "Soy sauce","Hot sauce","Honey","Mayonnaise","Mustard","Ketchup",
+  "Canned tomato sauce","Canned diced tomatoes","Chicken broth","Vegetable broth",
+  "Coconut milk","Almonds","Peanut butter","Flour","Sugar","Baking powder","Vanilla extract",
+];
+
+// Maps item names (lowercase) to their pantry display category, derived from prices.json.
+// Checked before making an API call so known items are categorized instantly.
+const GROCERY_ITEM_CATEGORIES = {
+  // Proteins
+  "chicken breast":"Proteins","chicken thighs":"Proteins","chicken drumsticks":"Proteins",
+  "whole chicken":"Proteins","chicken sausage":"Proteins","ground beef":"Proteins",
+  "ground turkey":"Proteins","ground lamb":"Proteins","beef steak":"Proteins",
+  "beef stew meat":"Proteins","pork chops":"Proteins","pork tenderloin":"Proteins",
+  "bacon":"Proteins","salmon fillet":"Proteins","tilapia":"Proteins",
+  "white fish fillet":"Proteins","shrimp":"Proteins","canned tuna":"Proteins",
+  "canned salmon":"Proteins","eggs":"Proteins","tofu":"Proteins","tempeh":"Proteins",
+  "canned chickpeas":"Proteins","canned black beans":"Proteins","canned kidney beans":"Proteins",
+  "dried lentils":"Proteins","turkey breast":"Proteins",
+  // Produce
+  "banana":"Produce","apple":"Produce","orange":"Produce","lemon":"Produce","lime":"Produce",
+  "avocado":"Produce","tomato":"Produce","cherry tomatoes":"Produce","cucumber":"Produce",
+  "zucchini":"Produce","bell pepper":"Produce","onion":"Produce","garlic":"Produce",
+  "broccoli":"Produce","cauliflower":"Produce","spinach":"Produce","kale":"Produce",
+  "lettuce":"Produce","mixed greens":"Produce","sweet potato":"Produce","potato":"Produce",
+  "carrot":"Produce","celery":"Produce","mushroom":"Produce","corn":"Produce",
+  "green beans":"Produce","asparagus":"Produce","blueberries":"Produce","strawberries":"Produce",
+  "mixed vegetables":"Produce","frozen broccoli":"Produce","frozen peas":"Produce","frozen corn":"Produce",
+  // Dairy
+  "milk":"Dairy","butter":"Dairy","cheddar cheese":"Dairy","mozzarella":"Dairy",
+  "feta cheese":"Dairy","parmesan":"Dairy","greek yogurt":"Dairy","sour cream":"Dairy",
+  "cream cheese":"Dairy","heavy cream":"Dairy","cottage cheese":"Dairy",
+  "almond milk":"Dairy","oat milk":"Dairy",
+  // Grains & Baking
+  "white rice":"Grains & Baking","brown rice":"Grains & Baking","pasta":"Grains & Baking",
+  "whole wheat bread":"Grains & Baking","whole grain bread":"Grains & Baking",
+  "pita bread":"Grains & Baking","tortillas":"Grains & Baking","oats":"Grains & Baking",
+  "quinoa":"Grains & Baking","couscous":"Grains & Baking","burger buns":"Grains & Baking",
+  "granola":"Grains & Baking","breadcrumbs":"Grains & Baking",
+  "almonds":"Grains & Baking","peanut butter":"Grains & Baking","flour":"Grains & Baking",
+  "sugar":"Grains & Baking","baking powder":"Grains & Baking","vanilla extract":"Grains & Baking",
+  // Oils & Fats
+  "olive oil":"Oils & Fats","vegetable oil":"Oils & Fats",
+  // Spices & Herbs
+  "salt":"Spices & Herbs","black pepper":"Spices & Herbs","garlic powder":"Spices & Herbs",
+  "onion powder":"Spices & Herbs","paprika":"Spices & Herbs","cumin":"Spices & Herbs",
+  "dried oregano":"Spices & Herbs","dried thyme":"Spices & Herbs","cinnamon":"Spices & Herbs",
+  "mixed herbs":"Spices & Herbs",
+  // Condiments & Sauces
+  "soy sauce":"Condiments & Sauces","hot sauce":"Condiments & Sauces","honey":"Condiments & Sauces",
+  "mayonnaise":"Condiments & Sauces","mustard":"Condiments & Sauces","ketchup":"Condiments & Sauces",
+  // Canned Goods
+  "canned tomato sauce":"Canned Goods","canned diced tomatoes":"Canned Goods",
+  "chicken broth":"Canned Goods","vegetable broth":"Canned Goods","coconut milk":"Canned Goods",
+};
 
 function MrMunchFace({ size = 40 }) {
   const s = size;
@@ -191,6 +271,8 @@ export default function PlatewellApp() {
   });
   const [pantryInput, setPantryInput] = useState("");
   const [pantryClassifying, setPantryClassifying] = useState(false);
+  const [pantrySuggestions, setPantrySuggestions] = useState([]);
+  const pantryInputRef = useRef(null);
 
   async function addCustomPantryItem() {
     const name = pantryInput.trim();
@@ -198,23 +280,28 @@ export default function PlatewellApp() {
     const normalized = name.charAt(0).toUpperCase() + name.slice(1);
     if (customPantryItems.some((i) => i.name.toLowerCase() === normalized.toLowerCase())) {
       setPantryInput("");
+      setPantrySuggestions([]);
       return;
     }
     setPantryInput("");
-    setPantryClassifying(true);
-    let category = "Other";
-    try {
-      const res = await fetch(`${API_BASE_URL}/classify-pantry-item`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemName: normalized }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        category = data.category || "Other";
-      }
-    } catch { /* fall through to Other */ }
-    setPantryClassifying(false);
+    setPantrySuggestions([]);
+    const knownCategory = GROCERY_ITEM_CATEGORIES[normalized.toLowerCase()];
+    let category = knownCategory || "Other";
+    if (!knownCategory) {
+      setPantryClassifying(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/classify-pantry-item`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemName: normalized }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          category = data.category || "Other";
+        }
+      } catch { /* fall through to Other */ }
+      setPantryClassifying(false);
+    }
     const newItem = { name: normalized, checked: true, category };
     const next = [...customPantryItems, newItem];
     setCustomPantryItems(next);
@@ -392,6 +479,100 @@ export default function PlatewellApp() {
 
   function toggleCheckedItem(item) {
     setCheckedItems((prev) => ({ ...prev, [item]: !prev[item] }));
+  }
+
+  function exportGroceryListPDF() {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 18;
+    const contentW = pageW - margin * 2;
+    let y = 20;
+
+    // Header — brand name
+    doc.setFontSize(26);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(31, 138, 91);
+    doc.text("Platewell", margin, y);
+    y += 8;
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 130, 110);
+    doc.text("Weekly Grocery List", margin, y);
+    y += 7;
+
+    // Divider
+    doc.setDrawColor(200, 230, 212);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageW - margin, y);
+    y += 8;
+
+    // Budget summary
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(18, 71, 52);
+    doc.text(`Weekly Budget: $${result.weeklyBudget ?? 0}`, margin, y);
+    doc.text(`Estimated Total: $${result.estimatedTotalCost ?? 0}`, margin + contentW / 2, y);
+    y += 10;
+
+    // Categories + items
+    const groceryData = Array.isArray(result.categorizedGroceryList) && result.categorizedGroceryList.length > 0
+      ? result.categorizedGroceryList
+      : [{ category: "Items", items: result.groceryList || [] }];
+
+    for (const { category, items } of groceryData) {
+      // Category heading
+      if (y > 265) { doc.addPage(); y = 20; }
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(31, 138, 91);
+      doc.text(category.toUpperCase(), margin, y);
+      y += 5;
+
+      // Items in two columns
+      const col2X = margin + contentW / 2;
+      let col = 0;
+      let rowY = y;
+      for (const item of items) {
+        if (rowY > 270) { doc.addPage(); rowY = 20; col = 0; }
+        const x = col === 0 ? margin : col2X;
+        const itemName = typeof item === "string" ? item : item.name;
+        const itemAmt = typeof item === "object" && item.displayAmount ? `${item.displayAmount} ` : "";
+
+        // Checkbox
+        doc.setDrawColor(180, 210, 195);
+        doc.setLineWidth(0.3);
+        doc.rect(x, rowY - 3.2, 3.5, 3.5);
+
+        // Text
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(35, 69, 54);
+        doc.text(`${itemAmt}${itemName}`, x + 5, rowY);
+
+        if (col === 0) {
+          col = 1;
+        } else {
+          col = 0;
+          rowY += 6.5;
+        }
+      }
+      if (col === 1) rowY += 6.5; // flush last odd item
+      y = rowY + 4;
+    }
+
+    // Footer
+    if (y > 275) { doc.addPage(); y = 20; }
+    doc.setDrawColor(200, 230, 212);
+    doc.setLineWidth(0.4);
+    doc.line(margin, y, pageW - margin, y);
+    y += 5;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(130, 150, 140);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`, margin, y);
+
+    doc.save("platewell-grocery-list.pdf");
   }
 
 
@@ -2768,39 +2949,92 @@ export default function PlatewellApp() {
               <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#1f8a5b" }}>
                 Add a custom item
               </p>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <input
-                  type="text"
-                  placeholder="e.g. Tahini, Gochujang, Panko..."
-                  value={pantryInput}
-                  onChange={(e) => setPantryInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomPantryItem(); } }}
-                  style={{
-                    ...styles.input,
-                    marginTop: 0,
-                    flex: 1,
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={addCustomPantryItem}
-                  disabled={pantryClassifying}
-                  style={{
-                    padding: "0 20px",
-                    borderRadius: "14px",
-                    border: "none",
-                    background: pantryClassifying ? "#a8d5bc" : "#1f8a5b",
-                    color: "#ffffff",
-                    fontWeight: 600,
-                    fontSize: "0.9rem",
-                    cursor: pantryClassifying ? "default" : "pointer",
-                    fontFamily: "inherit",
-                    whiteSpace: "nowrap",
-                    minWidth: "64px",
-                  }}
-                >
-                  {pantryClassifying ? "…" : "Add"}
-                </button>
+              <div style={{ position: "relative" }}>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input
+                    ref={pantryInputRef}
+                    type="text"
+                    placeholder="e.g. Tahini, Gochujang, Panko..."
+                    value={pantryInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPantryInput(val);
+                      if (val.trim().length >= 2) {
+                        const lower = val.toLowerCase();
+                        const matches = GROCERY_ITEMS.filter(item => item.toLowerCase().includes(lower)).slice(0, 8);
+                        setPantrySuggestions(matches);
+                      } else {
+                        setPantrySuggestions([]);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); addCustomPantryItem(); }
+                      if (e.key === "Escape") setPantrySuggestions([]);
+                    }}
+                    onBlur={() => setTimeout(() => setPantrySuggestions([]), 150)}
+                    style={{
+                      ...styles.input,
+                      marginTop: 0,
+                      flex: 1,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomPantryItem}
+                    disabled={pantryClassifying}
+                    style={{
+                      padding: "0 20px",
+                      borderRadius: "14px",
+                      border: "none",
+                      background: pantryClassifying ? "#a8d5bc" : "#1f8a5b",
+                      color: "#ffffff",
+                      fontWeight: 600,
+                      fontSize: "0.9rem",
+                      cursor: pantryClassifying ? "default" : "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                      minWidth: "64px",
+                    }}
+                  >
+                    {pantryClassifying ? "…" : "Add"}
+                  </button>
+                </div>
+                {pantrySuggestions.length > 0 && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    zIndex: 100,
+                    background: "#ffffff",
+                    border: "1px solid #c8e6d4",
+                    borderRadius: "12px",
+                    marginTop: "4px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    overflow: "hidden",
+                  }}>
+                    {pantrySuggestions.map((item) => (
+                      <div
+                        key={item}
+                        onMouseDown={() => {
+                          setPantryInput(item);
+                          setPantrySuggestions([]);
+                        }}
+                        style={{
+                          padding: "10px 14px",
+                          cursor: "pointer",
+                          fontSize: "0.9rem",
+                          color: "#124734",
+                          borderBottom: "1px solid #eaf5ee",
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "#eaf5ee"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                      >
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               {pantryClassifying && (
                 <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "#6b8578" }}>
@@ -3323,15 +3557,34 @@ export default function PlatewellApp() {
                 <div style={styles.metaCard}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
                     <h3 style={{ margin: 0, color: "#124734" }}>Grocery list</h3>
-                    {Object.values(checkedItems).some(Boolean) && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      {Object.values(checkedItems).some(Boolean) && (
+                        <button
+                          type="button"
+                          onClick={() => setCheckedItems({})}
+                          style={{ background: "none", border: "none", color: "#6b8578", fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}
+                        >
+                          Clear checks
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => setCheckedItems({})}
-                        style={{ background: "none", border: "none", color: "#6b8578", fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}
+                        onClick={exportGroceryListPDF}
+                        style={{
+                          background: "#1f8a5b",
+                          border: "none",
+                          color: "#ffffff",
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          padding: "6px 14px",
+                          borderRadius: "10px",
+                        }}
                       >
-                        Clear checks
+                        Export PDF
                       </button>
-                    )}
+                    </div>
                   </div>
 
                   {Array.isArray(result.categorizedGroceryList) && result.categorizedGroceryList.length > 0 ? (

@@ -1410,11 +1410,48 @@ const PANTRY_CLASSIFY_CATEGORIES = [
   "Other",
 ];
 
+// Lookup built from prices.json so known items are categorized without an AI call.
+const PRICES_CATEGORY_MAP = {
+  proteins: "Proteins",
+  produce: "Produce",
+  dairy: "Dairy",
+  grains_and_bread: "Grains & Baking",
+};
+const PANTRY_SPICES_SUBCATEGORY = {
+  "olive oil": "Oils & Fats", "vegetable oil": "Oils & Fats",
+  "salt": "Spices & Herbs", "black pepper": "Spices & Herbs",
+  "garlic powder": "Spices & Herbs", "onion powder": "Spices & Herbs",
+  "paprika": "Spices & Herbs", "cumin": "Spices & Herbs",
+  "dried oregano": "Spices & Herbs", "dried thyme": "Spices & Herbs",
+  "cinnamon": "Spices & Herbs", "mixed herbs": "Spices & Herbs",
+  "soy sauce": "Condiments & Sauces", "hot sauce": "Condiments & Sauces",
+  "honey": "Condiments & Sauces", "mayonnaise": "Condiments & Sauces",
+  "mustard": "Condiments & Sauces", "ketchup": "Condiments & Sauces",
+  "canned tomato sauce": "Canned Goods", "canned diced tomatoes": "Canned Goods",
+  "chicken broth": "Canned Goods", "vegetable broth": "Canned Goods",
+  "coconut milk": "Canned Goods",
+  "almonds": "Grains & Baking", "peanut butter": "Grains & Baking",
+  "flour": "Grains & Baking", "sugar": "Grains & Baking",
+  "baking powder": "Grains & Baking", "vanilla extract": "Grains & Baking",
+};
+const PRICES_ITEM_LOOKUP = {};
+for (const [cat, items] of Object.entries(PRICES_DATA.prices)) {
+  const mappedCat = PRICES_CATEGORY_MAP[cat];
+  for (const itemName of Object.keys(items)) {
+    PRICES_ITEM_LOOKUP[itemName.toLowerCase()] =
+      mappedCat ?? PANTRY_SPICES_SUBCATEGORY[itemName] ?? "Other";
+  }
+}
+
 app.post("/classify-pantry-item", async (req, res) => {
   try {
     const { itemName } = req.body;
     if (!itemName || typeof itemName !== "string") {
       return res.status(400).json({ error: "itemName is required" });
+    }
+    const knownCategory = PRICES_ITEM_LOOKUP[itemName.trim().toLowerCase()];
+    if (knownCategory) {
+      return res.json({ category: knownCategory });
     }
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
