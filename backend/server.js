@@ -2,9 +2,10 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import cron from "node-cron";
 
 dotenv.config();
 
@@ -22,10 +23,110 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PRICES_DATA = JSON.parse(readFileSync(join(__dirname, "prices.json"), "utf8"));
 
+const PRICES_CACHE_PATH = join(__dirname, "prices_cache.json");
+
+// Returns the active prices data: cache if it exists, otherwise base prices.json.
+function getActivePrices() {
+  if (existsSync(PRICES_CACHE_PATH)) {
+    try {
+      return JSON.parse(readFileSync(PRICES_CACHE_PATH, "utf8"));
+    } catch {
+      return PRICES_DATA;
+    }
+  }
+  return PRICES_DATA;
+}
+
+// BLS series IDs → { category, item } in prices.json
+const BLS_SERIES_MAP = {
+  APU0000708111: { category: "proteins",          item: "eggs" },
+  APU0000706111: { category: "proteins",          item: "chicken breast" },
+  APU0000703112: { category: "proteins",          item: "ground beef" },
+  APU0000709112: { category: "dairy",             item: "milk" },
+  APU0000702111: { category: "grains_and_bread",  item: "whole wheat bread" },
+  APU0000711311: { category: "produce",           item: "potato" },
+  APU0000711412: { category: "produce",           item: "tomato" },
+  APU0000711501: { category: "produce",           item: "lettuce" },
+  APU0000711101: { category: "produce",           item: "banana" },
+};
+
+async function updatePricesCache() {
+  const apiKey = process.env.BLS_API_KEY;
+  if (!apiKey) {
+    console.warn("[prices] BLS_API_KEY not set — skipping price update");
+    return;
+  }
+
+  const seriesIds = Object.keys(BLS_SERIES_MAP);
+  const year = new Date().getFullYear().toString();
+
+  let blsData;
+  try {
+    const response = await fetch("https://api.bls.gov/publicAPI/v2/timeseries/data/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seriesid: seriesIds, startyear: year, endyear: year, registrationkey: apiKey }),
+    });
+    blsData = await response.json();
+  } catch (err) {
+    console.error("[prices] BLS API fetch failed:", err.message);
+    return;
+  }
+
+  if (blsData.status !== "REQUEST_SUCCEEDED" || !Array.isArray(blsData.Results?.series)) {
+    console.warn("[prices] BLS API returned unexpected response:", blsData.message || blsData.status);
+    return;
+  }
+
+  // Deep-clone the base prices so we don't mutate PRICES_DATA
+  const updated = JSON.parse(JSON.stringify(PRICES_DATA));
+
+  for (const series of blsData.Results.series) {
+    const mapping = BLS_SERIES_MAP[series.seriesID];
+    if (!mapping || !series.data?.length) continue;
+
+    // BLS returns data newest-first; take the most recent value
+    const latest = series.data[0];
+    const blsPrice = parseFloat(latest.value);
+    if (isNaN(blsPrice)) continue;
+
+    const entry = updated.prices[mapping.category]?.[mapping.item];
+    if (!entry) continue;
+
+    // Use BLS price as the "mid" anchor and scale budget/premium proportionally
+    const oldMid = entry.mid || blsPrice;
+    const ratio = blsPrice / oldMid;
+    entry.mid     = parseFloat(blsPrice.toFixed(2));
+    entry.budget  = parseFloat((entry.budget  * ratio).toFixed(2));
+    entry.premium = parseFloat((entry.premium * ratio).toFixed(2));
+  }
+
+  updated._lastUpdated = new Date().toISOString();
+
+  try {
+    writeFileSync(PRICES_CACHE_PATH, JSON.stringify(updated, null, 2));
+    console.log(`[prices] Cache updated at ${updated._lastUpdated}`);
+  } catch (err) {
+    console.error("[prices] Failed to write prices_cache.json:", err.message);
+  }
+}
+
+// Run every Sunday at midnight
+cron.schedule("0 0 * * 0", () => {
+  console.log("[prices] Running scheduled weekly price update...");
+  updatePricesCache();
+});
+
+// Run once on startup if no cache exists yet
+if (!existsSync(PRICES_CACHE_PATH)) {
+  updatePricesCache();
+}
+
 function getStoreTier(storeName) {
   const name = String(storeName || "").toLowerCase().trim();
   if (!name) return "mid";
-  for (const [tier, stores] of Object.entries(PRICES_DATA.store_tiers)) {
+  const activePrices = getActivePrices();
+  for (const [tier, stores] of Object.entries(activePrices.store_tiers)) {
     if (stores.some((s) => name.includes(s.toLowerCase()) || s.toLowerCase().includes(name))) {
       return tier;
     }
@@ -36,7 +137,8 @@ function getStoreTier(storeName) {
 function lookupPrice(itemName, tier) {
   const needle = String(itemName || "").toLowerCase().trim();
   if (!needle) return null;
-  for (const category of Object.values(PRICES_DATA.prices)) {
+  const activePrices = getActivePrices();
+  for (const category of Object.values(activePrices.prices)) {
     for (const [key, data] of Object.entries(category)) {
       if (needle === key || needle.includes(key) || key.includes(needle)) {
         return { price: data[tier] ?? data["mid"], unit: data.unit, isStaple: data.staple || false };
@@ -2052,6 +2154,17 @@ app.post("/regenerateWithLeftovers", async (req, res) => {
   } catch (error) {
     console.error("Regenerate with leftovers error:", error);
     res.status(500).json({ error: "Regeneration failed." });
+  }
+});
+
+app.post("/update-prices", async (_req, res) => {
+  try {
+    await updatePricesCache();
+    const active = getActivePrices();
+    res.json({ ok: true, lastUpdated: active._lastUpdated || null });
+  } catch (err) {
+    console.error("/update-prices error:", err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
